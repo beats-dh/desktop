@@ -783,6 +783,16 @@ export class AppStore extends TypedBaseStore<IAppState> {
       this.onPullRequestCommentNotification
     )
 
+    this.notificationsStore.onNotificationShown((title, body, onClick) => {
+      this._setBanner({
+        type: BannerType.InAppNotification,
+        title,
+        body,
+        onOpenNotification: onClick,
+        onDismissed: () => {},
+      })
+    })
+
     onShowInstallingUpdate(this.onShowInstallingUpdate)
   }
 

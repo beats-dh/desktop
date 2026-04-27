@@ -79,6 +79,9 @@ export class NotificationsStore {
     null
   private onPullRequestCommentCallback: OnPullRequestCommentCallback | null =
     null
+  private onNotificationShownCallback:
+    | ((title: string, body: string, onClick: () => void) => void)
+    | null = null
   private cachedCommits: Map<string, Commit> = new Map()
   private skipCommitShas: Set<string> = new Set()
   private skipCheckRuns: Set<number> = new Set()
@@ -207,6 +210,11 @@ export class NotificationsStore {
       onClick,
     })
 
+    // Mirror the OS notification as an in-app banner so users see it even if
+    // native notifications were dismissed/blocked. Works on Windows, macOS,
+    // and Linux.
+    this.onNotificationShownCallback?.(title, body, onClick)
+
     this.statsStore.increment('pullRequestCommentNotificationCount')
   }
 
@@ -286,6 +294,11 @@ export class NotificationsStore {
       userInfo: event,
       onClick,
     })
+
+    // Mirror the OS notification as an in-app banner so users see it even if
+    // native notifications were dismissed/blocked. Works on Windows, macOS,
+    // and Linux.
+    this.onNotificationShownCallback?.(title, body, onClick)
 
     this.statsStore.recordPullRequestReviewNotificationShown(review.state)
   }
@@ -415,6 +428,11 @@ export class NotificationsStore {
       userInfo: event,
       onClick,
     })
+
+    // Mirror the OS notification as an in-app banner so users see it even if
+    // native notifications were dismissed/blocked. Works on Windows, macOS,
+    // and Linux.
+    this.onNotificationShownCallback?.(title, body, onClick)
 
     this.statsStore.increment('checksFailedNotificationCount')
   }
@@ -567,5 +585,12 @@ export class NotificationsStore {
     callback: OnPullRequestCommentCallback
   ) {
     this.onPullRequestCommentCallback = callback
+  }
+
+  /** Observe when a notification is shown on screen */
+  public onNotificationShown(
+    callback: (title: string, body: string, onClick: () => void) => void
+  ) {
+    this.onNotificationShownCallback = callback
   }
 }
