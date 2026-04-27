@@ -3036,7 +3036,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
     })
     this.emitUpdate()
 
-    if (selectedSection === RepositorySectionTab.History) {
+    if (
+      selectedSection === RepositorySectionTab.History ||
+      selectedSection === RepositorySectionTab.Compare
+    ) {
       await this.refreshHistorySection(repository)
     } else if (selectedSection === RepositorySectionTab.Changes) {
       await this.refreshChangesSection(repository, {
@@ -3681,7 +3684,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
     const section = state.selectedSection
     let refreshSectionPromise: Promise<void>
 
-    if (section === RepositorySectionTab.History) {
+    if (
+      section === RepositorySectionTab.History ||
+      section === RepositorySectionTab.Compare
+    ) {
       refreshSectionPromise = this.refreshHistorySection(repository)
     } else if (section === RepositorySectionTab.Changes) {
       refreshSectionPromise = this.refreshChangesSection(repository, {
