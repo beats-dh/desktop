@@ -44,6 +44,10 @@ import {
 import { buildSpellCheckMenu } from './menu/build-spell-check-menu'
 import { getMainGUID, saveGUIDFile } from '../lib/get-main-guid'
 import {
+  readTitleBarConfigFileSync,
+  saveTitleBarConfigFile,
+} from '../lib/get-title-bar-config'
+import {
   getNotificationsPermission,
   requestNotificationsPermission,
   showNotification,
@@ -277,6 +281,26 @@ async function handleCommandLineArguments(argv: string[]) {
     // If --protocol-launcher is present we always want to bail and not
     // risk a smuggled cli switch
     return
+  }
+
+  if (__LINUX__) {
+    const prefixes = Array.from(possibleProtocols, p => `${p}://`)
+    const matchingUrl = argv.find(arg => {
+      if (prefixes.some(p => arg.startsWith(p))) {
+        try {
+          new URL(arg)
+          return true
+        } catch (e) {
+          log.error(`Unable to parse argument as URL: ${arg}`)
+        }
+      }
+      return false
+    })
+
+    if (matchingUrl) {
+      handleAppURL(matchingUrl)
+      return
+    }
   }
 
   if (typeof args['cli-open'] === 'string') {
@@ -519,6 +543,11 @@ app.on('ready', () => {
     mainWindow?.quitAndInstallUpdate()
   )
 
+  ipcMain.on('restart-app', () => {
+    app.relaunch()
+    app.exit()
+  })
+
   ipcMain.on('quit-app', () => app.quit())
 
   ipcMain.on('minimize-window', () => mainWindow?.minimizeWindow())
@@ -711,6 +740,16 @@ app.on('ready', () => {
   ipcMain.handle('get-guid', () => getMainGUID())
 
   ipcMain.handle('save-guid', (_, guid) => saveGUIDFile(guid))
+
+  ipcMain.handle(
+    'get-title-bar-style',
+    async () => readTitleBarConfigFileSync().titleBarStyle
+  )
+
+  ipcMain.handle(
+    'save-title-bar-style',
+    async (_, titleBarStyle) => await saveTitleBarConfigFile({ titleBarStyle })
+  )
 
   ipcMain.handle('show-notification', async (_, title, body, userInfo) =>
     showNotification(title, body, userInfo)

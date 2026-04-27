@@ -1,2 +1,3 @@
 /app/test/fixtures/** -text
 /app/static/win32/github.sh eol=lf
+/.github/actions/ubuntu-*-packaging/entrypoint.sh eol=lf

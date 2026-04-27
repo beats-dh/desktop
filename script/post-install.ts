@@ -2,6 +2,7 @@
 
 import * as Path from 'path'
 import { spawnSync, SpawnSyncOptions } from 'child_process'
+import { existsSync, readdirSync } from 'fs'
 
 import glob from 'glob'
 import { forceUnwrap } from '../app/src/lib/fatal-error'
@@ -27,6 +28,22 @@ const playwrightCliPath = Path.join(
   'cli.js'
 )
 
+/** Check if the caller has set the OFFLINE environment variable */
+function isOffline() {
+  return process.env.OFFLINE === '1'
+}
+
+/** Format the arguments to ensure these work offline */
+function getYarnArgs(baseArgs: Array<string>): Array<string> {
+  const args = baseArgs
+
+  if (isOffline()) {
+    args.splice(1, 0, '--offline')
+  }
+
+  return args
+}
+
 function findYarnVersion(callback: (path: string) => void) {
   glob('vendor/yarn-*.js', (error, files) => {
     if (error != null) {
@@ -42,30 +59,77 @@ function findYarnVersion(callback: (path: string) => void) {
 }
 
 findYarnVersion(path => {
-  let result = spawnSync(
-    'node',
-    [path, '--cwd', 'app', 'install', '--force'],
-    options
-  )
+  const installArgs = getYarnArgs([path, '--cwd', 'app', 'install', '--force'])
+
+  let result = spawnSync('node', installArgs, options)
 
   if (result.status !== 0) {
     process.exit(result.status || 1)
   }
 
-  result = spawnSync(
-    'git',
-    ['submodule', 'update', '--recursive', '--init'],
-    options
-  )
+  if (!isOffline()) {
+    result = spawnSync(
+      'git',
+      ['submodule', 'update', '--recursive', '--init'],
+      options
+    )
+
+    if (result.status !== 0) {
+      process.exit(result.status || 1)
+    }
+  }
+
+  result = spawnSync('node', getYarnArgs([path, 'compile:script']), options)
 
   if (result.status !== 0) {
     process.exit(result.status || 1)
   }
 
-  result = spawnSync('node', [path, 'compile:script'], options)
+  // Yarn 1 silently skips install scripts for `file:` deps that point to a
+  // directory inside the project (vendor/printenvz), so the native binary
+  // never gets built. Force a rebuild via npm if the expected output is
+  // missing. This must run before script/build.ts which copies the binary
+  // into the AppImage / .deb / .rpm.
+  const printenvzBinary = Path.join(
+    root,
+    'node_modules/printenvz/build/Release',
+    process.platform === 'win32' ? 'printenvz.exe' : 'printenvz'
+  )
+  if (!existsSync(printenvzBinary)) {
+    console.log('printenvz binary missing, forcing rebuild via npm…')
+    result = spawnSync(
+      process.platform === 'win32' ? 'npm.cmd' : 'npm',
+      ['rebuild', 'printenvz'],
+      options
+    )
+    if (result.status !== 0) {
+      process.exit(result.status || 1)
+    }
+  }
 
-  if (result.status !== 0) {
-    process.exit(result.status || 1)
+  // Linux-specific: apply patches from the patches/ directory
+  if (process.platform === 'linux') {
+    const patchesDir = Path.join(root, 'patches')
+    if (existsSync(patchesDir)) {
+      const patches = readdirSync(patchesDir).filter(f => f.endsWith('.patch'))
+      for (const patch of patches) {
+        const patchPath = Path.join(patchesDir, patch)
+        result = spawnSync(
+          'patch',
+          ['-p1', '--forward', '--force', '--input', patchPath],
+          {
+            ...options,
+            cwd: root,
+          }
+        )
+        if (result.status !== 0 && result.status !== 1) {
+          // status 1 means already applied (idempotent), only fail on other errors
+          console.warn(
+            `Warning: patch ${patch} may have failed (status ${result.status})`
+          )
+        }
+      }
+    }
   }
 
   // Capture output here so CI failures include the Playwright-specific error.

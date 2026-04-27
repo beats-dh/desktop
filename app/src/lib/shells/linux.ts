@@ -1,7 +1,6 @@
-import { spawn, ChildProcess } from 'child_process'
+import { ChildProcess } from 'child_process'
 import { assertNever } from '../fatal-error'
 import { parseEnumValue } from '../enum'
-import { pathExists } from '../../ui/lib/path-exists'
 import { FoundShell } from './shared'
 import {
   expandTargetPathArgument,
@@ -9,6 +8,7 @@ import {
   parseCustomIntegrationArguments,
   spawnCustomIntegration,
 } from '../custom-integration'
+import { pathExists, spawn } from '../helpers/linux'
 
 export enum Shell {
   Gnome = 'GNOME Terminal',
@@ -28,6 +28,7 @@ export enum Shell {
   Kitty = 'Kitty',
   LXTerminal = 'LXDE Terminal',
   Warp = 'Warp',
+  BlackBox = 'Black Box',
   Ghostty = 'Ghostty',
 }
 
@@ -77,6 +78,8 @@ function getShellPath(shell: Shell): Promise<string | null> {
       return getPathIfAvailable('/usr/bin/lxterminal')
     case Shell.Warp:
       return getPathIfAvailable('/usr/bin/warp-terminal')
+    case Shell.BlackBox:
+      return getPathIfAvailable('/usr/bin/blackbox-terminal')
     case Shell.Ghostty:
       return getPathIfAvailable('/usr/bin/ghostty')
     default:
@@ -105,6 +108,7 @@ export async function getAvailableShells(): Promise<
     kittyPath,
     lxterminalPath,
     warpPath,
+    blackBoxPath,
     ghosttyPath,
   ] = await Promise.all([
     getShellPath(Shell.Gnome),
@@ -124,6 +128,7 @@ export async function getAvailableShells(): Promise<
     getShellPath(Shell.Kitty),
     getShellPath(Shell.LXTerminal),
     getShellPath(Shell.Warp),
+    getShellPath(Shell.BlackBox),
     getShellPath(Shell.Ghostty),
   ])
 
@@ -196,6 +201,10 @@ export async function getAvailableShells(): Promise<
     shells.push({ shell: Shell.Warp, path: warpPath })
   }
 
+  if (blackBoxPath) {
+    shells.push({ shell: Shell.BlackBox, path: blackBoxPath })
+  }
+
   if (ghosttyPath) {
     shells.push({ shell: Shell.Ghostty, path: ghosttyPath })
   }
@@ -216,6 +225,7 @@ export function launch(
     case Shell.Terminator:
     case Shell.XFCE:
     case Shell.Alacritty:
+    case Shell.BlackBox:
       return spawn(foundShell.path, ['--working-directory', path])
     case Shell.Ptyxis:
       return spawn(foundShell.path, [
