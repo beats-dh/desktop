@@ -1,5 +1,10 @@
 {
   "releases": {
+    "3.5.9": [
+      "[Fixed] Add syntax highlighting for .astro files - #21987. Thanks @JunDev76!",
+      "[Fixed] Fix Windows scrollbar sync with react-virtualized Grid - #21940",
+      "[Fixed] Improve spacing on release notes dialog - #21962. Thanks @DylanDevelops!"
+    ],
     "3.5.9-beta2": [
       "[Fixed] Add syntax highlighting for .astro files - #21987. Thanks @JunDev76!",
       "[Fixed] Fix Windows scrollbar sync with react-virtualized Grid - #21940",
