@@ -143,7 +143,12 @@ export class About extends React.Component<IAboutProps> {
 
   private renderUpdateDetails() {
     if (__LINUX__) {
-      return null
+      return (
+        <p>
+          Please visit the GitHub Desktop for Linux release page for
+          Linux-specific release notes and to download the latest version.
+        </p>
+      )
     }
 
     if (!this.canCheckForUpdates) {
@@ -232,6 +237,10 @@ export class About extends React.Component<IAboutProps> {
 
   private renderBetaLink() {
     if (__RELEASE_CHANNEL__ === 'beta') {
+      return
+    }
+
+    if (__LINUX__) {
       return
     }
 

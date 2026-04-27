@@ -173,6 +173,7 @@ import { SSHUserPassword } from './ssh/ssh-user-password'
 import { showContextualMenu } from '../lib/menu-item'
 import { UnreachableCommitsDialog } from './history/unreachable-commits-dialog'
 import { OpenPullRequestDialog } from './open-pull-request/open-pull-request-dialog'
+import { ConfirmRestart } from './preferences/confirm-restart'
 import { sendNonFatalException } from '../lib/helpers/non-fatal-exception'
 import { ICustomIntegration } from '../lib/custom-integration'
 import { createCommitURL } from '../lib/commit-url'
@@ -1332,8 +1333,8 @@ export class App extends React.Component<IAppProps, IAppState> {
    * on Windows.
    */
   private renderAppMenuBar() {
-    // We only render the app menu bar on Windows
-    if (!__WIN32__) {
+    // We do not render the app menu bar on macOS
+    if (__DARWIN__) {
       return null
     }
 
@@ -1384,9 +1385,9 @@ export class App extends React.Component<IAppProps, IAppState> {
       this.state.currentFoldout &&
       this.state.currentFoldout.type === FoldoutType.AppMenu
 
-    // As Linux still uses the classic Electron menu, we are opting out of the
-    // custom menu that is shown as part of the title bar below
-    if (__LINUX__) {
+    // We do not render the app menu bar on Linux when the user has selected
+    // the "native" menu option
+    if (__LINUX__ && this.state.titleBarStyle === 'native') {
       return null
     }
 
@@ -1394,12 +1395,12 @@ export class App extends React.Component<IAppProps, IAppState> {
     // the title bar when the menu bar is active. On other platforms we
     // never render the title bar while in full-screen mode.
     if (inFullScreen) {
-      if (!__WIN32__ || !menuBarActive) {
+      if (__DARWIN__ || !menuBarActive) {
         return null
       }
     }
 
-    const showAppIcon = __WIN32__ && !this.state.showWelcomeFlow
+    const showAppIcon = !__DARWIN__ && !this.state.showWelcomeFlow
     const inWelcomeFlow = this.state.showWelcomeFlow
     const inNoRepositoriesView = this.inNoRepositoriesViewState()
 
@@ -1599,6 +1600,7 @@ export class App extends React.Component<IAppProps, IAppState> {
             customEditor={this.state.customEditor}
             useCustomShell={this.state.useCustomShell}
             customShell={this.state.customShell}
+            titleBarStyle={this.state.titleBarStyle}
             repositoryIndicatorsEnabled={this.state.repositoryIndicatorsEnabled}
             onEditGlobalGitConfig={this.editGlobalGitConfig}
             underlineLinks={this.state.underlineLinks}
@@ -2647,6 +2649,14 @@ export class App extends React.Component<IAppProps, IAppState> {
           <CommitProgress
             key="commit-progress-dialog"
             subscribeToCommitOutput={popup.subscribeToCommitOutput}
+            onDismissed={onPopupDismissedFn}
+          />
+        )
+      }
+      case PopupType.ConfirmRestart: {
+        return (
+          <ConfirmRestart
+            key="confirm-restart"
             onDismissed={onPopupDismissedFn}
           />
         )
