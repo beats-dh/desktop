@@ -140,6 +140,7 @@ import {
   IConstrainedValue,
   ICompareState,
   CommitOptions,
+  PullButtonDefaultAction,
 } from '../app-state'
 import type { ModelInfo } from '@github/copilot-sdk'
 import {
@@ -446,6 +447,33 @@ const tabSizeKey: string = 'tab-size'
 const shellKey = 'shell'
 
 const repositoryIndicatorsEnabledKey = 'enable-repository-indicators'
+const pullButtonDefaultActionKey = 'pull-button-default-action'
+// Legacy boolean key (true == 'pull-rebase', undefined/false == 'pull-merge')
+const legacyDefaultPullWithRebaseKey = 'default-pull-with-rebase'
+
+function readPullButtonDefaultAction(): PullButtonDefaultAction {
+  const stored = localStorage.getItem(pullButtonDefaultActionKey)
+  if (stored === 'pull-merge' || stored === 'pull-rebase') {
+    return stored
+  }
+
+  // Migrate legacy boolean preference if present
+  const legacy = getBoolean(legacyDefaultPullWithRebaseKey)
+  if (legacy !== undefined) {
+    const migrated: PullButtonDefaultAction = legacy
+      ? 'pull-rebase'
+      : 'pull-merge'
+    localStorage.setItem(pullButtonDefaultActionKey, migrated)
+    localStorage.removeItem(legacyDefaultPullWithRebaseKey)
+    return migrated
+  }
+
+  // Drop any obsolete value (e.g. legacy 'fetch') so we fall back cleanly.
+  if (stored !== null) {
+    localStorage.removeItem(pullButtonDefaultActionKey)
+  }
+  return 'pull-merge'
+}
 
 // background fetching should occur hourly when Desktop is active, but this
 // lower interval ensures user interactions like switching repositories and
@@ -611,6 +639,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
   private repositoryIndicatorsEnabled: boolean
 
+  private pullButtonDefaultAction: PullButtonDefaultAction = 'pull-merge'
+
   /** Which step the user needs to complete next in the onboarding tutorial */
   private currentOnboardingTutorialStep = TutorialStep.NotApplicable
   private readonly tutorialAssessor: OnboardingTutorialAssessor
@@ -711,6 +741,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     this.repositoryIndicatorsEnabled =
       getBoolean(repositoryIndicatorsEnabledKey) ?? true
+
+    this.pullButtonDefaultAction = readPullButtonDefaultAction()
 
     this.repositoryIndicatorUpdater = new RepositoryIndicatorUpdater(
       this.getRepositoriesForIndicatorRefresh,
@@ -1139,6 +1171,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       optOutOfUsageTracking: this.statsStore.getOptOut(),
       currentOnboardingTutorialStep: this.currentOnboardingTutorialStep,
       repositoryIndicatorsEnabled: this.repositoryIndicatorsEnabled,
+      pullButtonDefaultAction: this.pullButtonDefaultAction,
       commitSpellcheckEnabled: this.commitSpellcheckEnabled,
       currentDragElement: this.currentDragElement,
       lastThankYou: this.lastThankYou,
@@ -3863,6 +3896,16 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.emitUpdate()
   }
 
+  public _setPullButtonDefaultAction(action: PullButtonDefaultAction) {
+    if (this.pullButtonDefaultAction === action) {
+      return
+    }
+
+    localStorage.setItem(pullButtonDefaultActionKey, action)
+    this.pullButtonDefaultAction = action
+    this.emitUpdate()
+  }
+
   public _setCommitSpellcheckEnabled(commitSpellcheckEnabled: boolean) {
     if (this.commitSpellcheckEnabled === commitSpellcheckEnabled) {
       return
@@ -4976,14 +5019,20 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
   }
 
-  public async _pull(repository: Repository): Promise<void> {
+  public async _pull(
+    repository: Repository,
+    options?: { pullStrategy?: 'rebase' | 'merge' }
+  ): Promise<void> {
     return this.withRefreshedGitHubRepository(repository, repository => {
-      return this.performPull(repository)
+      return this.performPull(repository, options?.pullStrategy)
     })
   }
 
   /** This shouldn't be called directly. See `Dispatcher`. */
-  private async performPull(repository: Repository): Promise<void> {
+  private async performPull(
+    repository: Repository,
+    pullStrategy?: 'rebase' | 'merge'
+  ): Promise<void> {
     return this.withPushPullFetch(repository, async () => {
       const gitStore = this.gitStoreCache.get(repository)
       const remote = gitStore.currentRemote
@@ -5050,7 +5099,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
             repository,
           }
 
-          if (gitStore.pullWithRebase) {
+          const willRebase =
+            pullStrategy === 'rebase' ||
+            (pullStrategy !== 'merge' && gitStore.pullWithRebase === true)
+
+          if (willRebase) {
             this.statsStore.increment('pullWithRebaseCount')
           } else {
             this.statsStore.increment('pullWithDefaultSettingCount')
@@ -5061,6 +5114,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
             .performFailableOperation(
               async () => {
                 await pullRepo(repository, remote, {
+                  pullStrategy,
                   progressCallback: progress => {
                     this.updatePushPullFetchProgress(repository, {
                       ...progress,

@@ -23,6 +23,7 @@ import {
   MultiCommitOperationConflictState,
   IMultiCommitOperationState,
   CommitOptions,
+  PullButtonDefaultAction,
 } from '../../lib/app-state'
 import { assertNever, fatalError } from '../../lib/fatal-error'
 import {
@@ -740,6 +741,22 @@ export class Dispatcher {
   /** Pull the current branch. */
   public pull(repository: Repository): Promise<void> {
     return this.appStore._pull(repository)
+  }
+
+  /**
+   * Pull the current branch using `git pull --rebase`, regardless of the
+   * user's `pull.rebase` config.
+   */
+  public pullWithRebase(repository: Repository): Promise<void> {
+    return this.appStore._pull(repository, { pullStrategy: 'rebase' })
+  }
+
+  /**
+   * Pull the current branch using `git pull --no-rebase`, regardless of the
+   * user's `pull.rebase` config.
+   */
+  public pullWithMerge(repository: Repository): Promise<void> {
+    return this.appStore._pull(repository, { pullStrategy: 'merge' })
   }
 
   /** Fetch a specific refspec for the repository. */
@@ -2775,6 +2792,15 @@ export class Dispatcher {
 
   public setRepositoryIndicatorsEnabled(repositoryIndicatorsEnabled: boolean) {
     this.appStore._setRepositoryIndicatorsEnabled(repositoryIndicatorsEnabled)
+  }
+
+  /**
+   * Set the default click action for the main pull/push button when behind
+   * the remote: `'pull-merge'`, `'pull-rebase'`, or `'fetch'`. Picked from the
+   * dropdown's right-click menu or from Preferences → Advanced.
+   */
+  public setPullButtonDefaultAction(action: PullButtonDefaultAction) {
+    this.appStore._setPullButtonDefaultAction(action)
   }
 
   public setCommitSpellcheckEnabled(commitSpellcheckEnabled: boolean) {

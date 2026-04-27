@@ -25,7 +25,13 @@ import {
   ToolbarDropdown,
   ToolbarDropdownStyle,
 } from './dropdown'
-import { FoldoutType, IConstrainedValue } from '../../lib/app-state'
+import {
+  FoldoutType,
+  IConstrainedValue,
+  PullButtonDefaultAction,
+} from '../../lib/app-state'
+import { PopupType } from '../../models/popup'
+import { PreferencesTab } from '../../models/preferences'
 import { ForcePushBranchState } from '../../lib/rebase'
 import { PushPullButtonDropDown } from './push-pull-button-dropdown'
 import { AriaLiveContainer } from '../accessibility/aria-live-container'
@@ -68,6 +74,13 @@ interface IPushPullButtonProps {
 
   /** Has the user configured pull.rebase to anything? */
   readonly pullWithRebase?: boolean
+
+  /**
+   * App-level preference picking what the main button does when behind the
+   * remote: `'pull-merge'` (default), `'pull-rebase'`, or `'fetch'`. Settable
+   * via right-click on the dropdown items or in Preferences → Advanced.
+   */
+  readonly pullButtonDefaultAction: PullButtonDefaultAction
 
   /** Is the detached HEAD state related to a rebase or not? */
   readonly rebaseInProgress: boolean
@@ -120,6 +133,8 @@ interface IPushPullButtonState {
 export enum DropdownItemType {
   Fetch = 'fetch',
   ForcePush = 'force-push',
+  PullWithRebase = 'pull-with-rebase',
+  PullWithMerge = 'pull-with-merge',
 }
 
 export type DropdownItem = {
@@ -351,9 +366,26 @@ export class PushPullButton extends React.Component<
     this.setState({ actionInProgress: 'force push' })
   }
 
-  private pull = () => {
+  private pullWithRebase = () => {
     this.closeDropdown()
-    this.props.dispatcher.pull(this.props.repository)
+    this.props.dispatcher.pullWithRebase(this.props.repository)
+  }
+
+  private pullWithMerge = () => {
+    this.closeDropdown()
+    this.props.dispatcher.pullWithMerge(this.props.repository)
+  }
+
+  private setPullButtonDefaultAction = (action: PullButtonDefaultAction) => {
+    this.props.dispatcher.setPullButtonDefaultAction(action)
+  }
+
+  private openPullBehaviorPreferences = () => {
+    this.closeDropdown()
+    this.props.dispatcher.showPopup({
+      type: PopupType.Preferences,
+      initialSelectedTab: PreferencesTab.Advanced,
+    })
   }
 
   private fetch = () => {
@@ -393,6 +425,11 @@ export class PushPullButton extends React.Component<
           remoteName={this.props.remoteName}
           fetch={this.fetch}
           forcePushWithLease={this.forcePushWithLease}
+          pullWithRebase={this.pullWithRebase}
+          pullWithMerge={this.pullWithMerge}
+          pullButtonDefaultAction={this.props.pullButtonDefaultAction}
+          onSetPullButtonDefaultAction={this.setPullButtonDefaultAction}
+          onOpenPreferences={this.openPullBehaviorPreferences}
           askForConfirmationOnForcePush={
             this.props.askForConfirmationOnForcePush
           }
@@ -443,7 +480,6 @@ export class PushPullButton extends React.Component<
       tipState,
       rebaseInProgress,
       lastFetched,
-      pullWithRebase,
       forcePushBranchState,
     } = this.props
 
@@ -478,25 +514,42 @@ export class PushPullButton extends React.Component<
       return this.fetchButton(remoteName, lastFetched, this.fetch)
     }
 
-    if (forcePushBranchState === ForcePushBranchState.Recommended) {
+    if (
+      forcePushBranchState === ForcePushBranchState.Recommended &&
+      behind === 0
+    ) {
+      // Force push only takes the main button when there's nothing to pull,
+      // i.e. the local branch is purely ahead after a history rewrite. When
+      // the branch is also behind (`behind > 0`), the user almost certainly
+      // doesn't want a single click to overwrite remote commits, so we fall
+      // through to the pull button below — force push is still reachable
+      // from that dropdown.
       return this.forcePushButton(
         remoteName,
         aheadBehind,
         numTagsToPush,
         lastFetched,
+        [DropdownItemType.Fetch],
         this.forcePushWithLease
       )
     }
 
     if (behind > 0) {
+      // Pick the main button's title and click action strictly from the app
+      // preference: "pull-rebase" forces --rebase, "pull-merge" forces
+      // --no-rebase. Git config is intentionally ignored here so the title
+      // can never disagree with the action.
+      const isRebase = this.props.pullButtonDefaultAction === 'pull-rebase'
+      const pullAction = isRebase ? this.pullWithRebase : this.pullWithMerge
+
       return this.pullButton(
         remoteName,
         aheadBehind,
         numTagsToPush,
         lastFetched,
-        pullWithRebase || false,
+        isRebase,
         forcePushBranchState,
-        this.pull
+        pullAction
       )
     }
 
@@ -616,7 +669,17 @@ export class PushPullButton extends React.Component<
       ? `Pull ${remoteName} with rebase`
       : `Pull ${remoteName}`
 
-    const dropdownItemTypes = [DropdownItemType.Fetch]
+    const { pullButtonDefaultAction } = this.props
+    // Fetch is always offered as an alternative. The other pull-strategy item
+    // is whichever one ISN'T currently wired to the main button click.
+    const dropdownItemTypes: DropdownItemType[] = [DropdownItemType.Fetch]
+
+    if (pullButtonDefaultAction !== 'pull-merge') {
+      dropdownItemTypes.push(DropdownItemType.PullWithMerge)
+    }
+    if (pullButtonDefaultAction !== 'pull-rebase') {
+      dropdownItemTypes.push(DropdownItemType.PullWithRebase)
+    }
 
     if (forcePushBranchState !== ForcePushBranchState.NotAvailable) {
       dropdownItemTypes.push(DropdownItemType.ForcePush)
@@ -668,6 +731,7 @@ export class PushPullButton extends React.Component<
     aheadBehind: IAheadBehind,
     numTagsToPush: number,
     lastFetched: Date | null,
+    dropdownItemTypes: ReadonlyArray<DropdownItemType>,
     onClick: () => void
   ) {
     return (
@@ -677,9 +741,9 @@ export class PushPullButton extends React.Component<
         description={renderLastFetched(lastFetched)}
         icon={forcePushIcon}
         onClick={onClick}
-        dropdownContentRenderer={this.getDropdownContentRenderer([
-          DropdownItemType.Fetch,
-        ])}
+        dropdownContentRenderer={this.getDropdownContentRenderer(
+          dropdownItemTypes
+        )}
       >
         {renderAheadBehind(aheadBehind, numTagsToPush)}
       </ToolbarDropdown>

@@ -65,6 +65,13 @@ export enum SelectionType {
   MissingRepository,
 }
 
+/**
+ * What clicking the main pull/push button does when the branch is behind the
+ * remote. Settable per-user from the dropdown's right-click menu or from
+ * Preferences → Advanced → Pull behavior.
+ */
+export type PullButtonDefaultAction = 'pull-merge' | 'pull-rebase'
+
 export type PossibleSelections =
   | {
       type: SelectionType.Repository
@@ -336,6 +343,14 @@ export interface IAppState {
    * for more information
    */
   readonly repositoryIndicatorsEnabled: boolean
+
+  /**
+   * The action assigned to the main pull/push button's default click in the
+   * pull state (when the branch is behind the remote). Selectable from the
+   * dropdown's right-click menu or from Preferences → Advanced → Pull
+   * behavior.
+   */
+  readonly pullButtonDefaultAction: PullButtonDefaultAction
 
   /**
    * Whether or not the app should use spell check on commit summary and description
