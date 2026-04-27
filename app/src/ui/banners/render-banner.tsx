@@ -19,7 +19,6 @@ import { SuccessfulSquash } from './successful-squash'
 import { SuccessBanner } from './success-banner'
 import { ConflictsFoundBanner } from './conflicts-found-banner'
 import { OSVersionNoLongerSupportedBanner } from './os-version-no-longer-supported-banner'
-import { InAppNotificationBanner } from './in-app-notification-banner'
 
 export function renderBanner(
   banner: Banner,
@@ -172,22 +171,6 @@ export function renderBanner(
       )
     case BannerType.OSVersionNoLongerSupported:
       return <OSVersionNoLongerSupportedBanner onDismissed={onDismissed} />
-    case BannerType.InAppNotification:
-      return (
-        <InAppNotificationBanner
-          key="in-app-notification"
-          title={banner.title}
-          body={banner.body}
-          onOpenNotification={() => {
-            banner.onOpenNotification()
-            onDismissed()
-          }}
-          onDismissed={() => {
-            banner.onDismissed()
-            onDismissed()
-          }}
-        />
-      )
     default:
       return assertNever(banner, `Unknown popup type: ${banner}`)
   }

@@ -70,6 +70,7 @@ import { DiscardChanges } from './discard-changes'
 import { Welcome } from './welcome'
 import { AppMenuBar } from './app-menu'
 import { UpdateAvailable, renderBanner } from './banners'
+import { NotificationToastContainer } from './notifications/notification-toast-container'
 import { Preferences } from './preferences'
 import { EditCopilotBYOKProviderDialog } from './copilot/edit-byok-provider-dialog'
 import { EditCopilotBYOKModelDialog } from './copilot/edit-byok-model-dialog'
@@ -2955,6 +2956,9 @@ export class App extends React.Component<IAppProps, IAppState> {
   private setBanner = (banner: Banner) =>
     this.props.dispatcher.setBanner(banner)
 
+  private dismissNotificationToast = (id: string) =>
+    this.props.dispatcher.dismissNotificationToast(id)
+
   private getDesktopAppContentsClassNames = (): string => {
     const { currentDragElement } = this.state
     const isCommitBeingDragged =
@@ -2975,6 +2979,10 @@ export class App extends React.Component<IAppProps, IAppState> {
         {this.renderRepository()}
         {this.renderPopups()}
         {this.renderDragElement()}
+        <NotificationToastContainer
+          toasts={this.state.notificationToasts}
+          onDismiss={this.dismissNotificationToast}
+        />
       </div>
     )
   }

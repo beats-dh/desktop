@@ -39,6 +39,7 @@ import { TitleBarStyle } from '../ui/lib/title-bar-style'
 import { IAccountRepositories } from './stores/api-repositories-store'
 import { ManualConflictResolution } from '../models/manual-conflict-resolution'
 import { Banner } from '../models/banner'
+import { INotificationToast } from '../models/notification-toast'
 import { IStashEntry } from '../models/stash-entry'
 import { TutorialStep } from '../models/tutorial-step'
 import { UncommittedChangesStrategy } from '../models/uncommitted-changes-strategy'
@@ -148,6 +149,14 @@ export interface IAppState {
   readonly allPopups: ReadonlyArray<Popup>
   readonly currentFoldout: Foldout | null
   readonly currentBanner: Banner | null
+
+  /**
+   * Active floating notification toasts rendered as a stack in the corner of
+   * the window. Newest first. Independent from `currentBanner` so a toast and
+   * an inline banner can coexist (e.g. PR notification toast + Update
+   * available banner).
+   */
+  readonly notificationToasts: ReadonlyArray<INotificationToast>
 
   /**
    * The shape of the drag element rendered in the `app.renderDragElement`. It

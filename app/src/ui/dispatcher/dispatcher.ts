@@ -1053,6 +1053,11 @@ export class Dispatcher {
     return this.appStore._clearBanner(bannerType)
   }
 
+  /** Dismiss a floating notification toast by id. */
+  public dismissNotificationToast(id: string) {
+    return this.appStore._dismissNotificationToast(id)
+  }
+
   /**
    * Reset the width of the repository sidebar to its default
    * value. This affects the changes and history sidebar

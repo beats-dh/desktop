@@ -17,7 +17,6 @@ export enum BannerType {
   SuccessfulReorder = 'SuccessfulReorder',
   ConflictsFound = 'ConflictsFound',
   OSVersionNoLongerSupported = 'OSVersionNoLongerSupported',
-  InAppNotification = 'InAppNotification',
 }
 
 export type Banner =
@@ -123,10 +122,3 @@ export type Banner =
       readonly onOpenConflictsDialog: () => void
     }
   | { readonly type: BannerType.OSVersionNoLongerSupported }
-  | {
-      readonly type: BannerType.InAppNotification
-      readonly title: string
-      readonly body: string
-      readonly onOpenNotification: () => void
-      readonly onDismissed: () => void
-    }
