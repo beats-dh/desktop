@@ -2,9 +2,8 @@
 /// <reference path="./globals.d.ts" />
 
 import * as cp from 'child_process'
-import packager, { OfficialArch, OsxNotarizeOptions } from 'electron-packager'
+import packager, { OsxNotarizeOptions } from 'electron-packager'
 import frontMatter from 'front-matter'
-import * as os from 'os'
 import * as path from 'path'
 import { getPrintenvzPath } from 'printenvz'
 import { getProxyCommandPath } from 'process-proxy'
@@ -142,17 +141,19 @@ function packageApp() {
     )
   }
 
-  const toPackageArch = (targetArch: string | undefined): OfficialArch => {
-    if (targetArch === undefined) {
-      targetArch = os.arch()
+  const getPackageArch = (): 'arm64' | 'x64' | 'armv7l' => {
+    const arch = process.env.npm_config_arch || process.arch
+
+    if (arch === 'arm64' || arch === 'x64') {
+      return arch
     }
 
-    if (targetArch === 'arm64' || targetArch === 'x64') {
-      return targetArch
+    if (arch === 'arm') {
+      return 'armv7l'
     }
 
     throw new Error(
-      `Building Desktop for architecture '${targetArch}' is not supported`
+      `Building Desktop for architecture '${arch}' is not supported. Currently these architectures are supported: arm, arm64, x64`
     )
   }
 
@@ -181,7 +182,7 @@ function packageApp() {
   return packager({
     name: getExecutableName(),
     platform: toPackagePlatform(process.platform),
-    arch: toPackageArch(process.env.TARGET_ARCH),
+    arch: getPackageArch(),
     asar: false, // TODO: Probably wanna enable this down the road.
     out: getDistRoot(),
     icon: join(iconPath, 'icon-logo'),
@@ -353,8 +354,15 @@ function copyDependencies() {
     )
 
     const copilotDestination = path.resolve(outRoot, 'copilot')
+
+    // Workaround: delete the .bin directory in copilot's node_modules before copying
+    // as it contains broken symlinks which cause Node's cpSync to throw ENOENT
+    const copilotBinDir = path.join(copilotPkgDir, 'node_modules', '.bin')
+    rmSync(copilotBinDir, { recursive: true, force: true })
+
     cpSync(copilotPkgDir, copilotDestination, {
       recursive: true,
+      verbatimSymlinks: true,
     })
 
     const nonValidPlatforms = ['darwin', 'linux', 'win32'].filter(

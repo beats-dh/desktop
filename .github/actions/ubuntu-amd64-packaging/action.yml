@@ -1,0 +1,7 @@
+name: 'GitHub Desktop for Linux packaging (amd64)'
+description:
+  'Builds and packages Desktop for Linux x64 inside an Ubuntu 22.04 container
+  with Node 22 LTS.'
+runs:
+  using: 'docker'
+  image: 'Dockerfile'

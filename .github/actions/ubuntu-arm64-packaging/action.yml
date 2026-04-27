@@ -1,0 +1,7 @@
+name: 'GitHub Desktop for Linux packaging (arm64)'
+description:
+  'Cross-compiles and packages Desktop for Linux arm64 inside an Ubuntu 22.04
+  container with Node 22 LTS.'
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
