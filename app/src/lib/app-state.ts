@@ -469,6 +469,13 @@ export type Foldout =
 export enum RepositorySectionTab {
   Changes,
   History,
+  /**
+   * Same data as History (commits + branches) but the sidebar surfaces the
+   * "compare against another branch" UI instead of the commit search box.
+   * Sharing the underlying state lets us reuse the History refresh path and
+   * the right-pane diff rendering.
+   */
+  Compare,
 }
 
 /**
