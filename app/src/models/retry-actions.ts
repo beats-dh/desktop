@@ -23,7 +23,14 @@ export enum RetryActionType {
 /** The retriable actions and their associated data. */
 export type RetryAction =
   | { type: RetryActionType.Push; repository: Repository }
-  | { type: RetryActionType.Pull; repository: Repository }
+  | {
+      type: RetryActionType.Pull
+      repository: Repository
+      // Preserves the strategy the user originally invoked the pull with so
+      // that retrying after an auth/network failure honors their default
+      // (merge vs rebase) rather than silently falling back to plain pull.
+      pullStrategy?: 'rebase' | 'merge'
+    }
   | { type: RetryActionType.Fetch; repository: Repository }
   | {
       type: RetryActionType.Clone

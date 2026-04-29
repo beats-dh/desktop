@@ -22,6 +22,7 @@ import {
 import { Appearance } from './appearance'
 import { ApplicationTheme } from '../lib/application-theme'
 import { TitleBarStyle } from '../lib/title-bar-style'
+import { PullButtonDefaultAction } from '../../lib/app-state'
 import { OkCancelButtonGroup } from '../dialog/ok-cancel-button-group'
 import { Integrations } from './integrations'
 import {
@@ -112,6 +113,7 @@ interface IPreferencesProps {
   readonly customShell: ICustomIntegration | null
   readonly titleBarStyle: TitleBarStyle
   readonly repositoryIndicatorsEnabled: boolean
+  readonly pullButtonDefaultAction: PullButtonDefaultAction
   readonly onEditGlobalGitConfig: () => void
   readonly underlineLinks: boolean
   readonly showDiffCheckMarks: boolean
@@ -163,6 +165,7 @@ interface IPreferencesState {
    */
   readonly existingLockFilePath?: string
   readonly repositoryIndicatorsEnabled: boolean
+  readonly pullButtonDefaultAction: PullButtonDefaultAction
 
   readonly initiallySelectedTheme: ApplicationTheme
   readonly initiallySelectedTabSize: number
@@ -239,6 +242,7 @@ export class Preferences extends React.Component<
       selectedShell: this.props.selectedShell,
       titleBarStyle: this.props.titleBarStyle,
       repositoryIndicatorsEnabled: this.props.repositoryIndicatorsEnabled,
+      pullButtonDefaultAction: this.props.pullButtonDefaultAction,
       initiallySelectedTheme: this.props.selectedTheme,
       initiallySelectedTabSize: this.props.selectedTabSize,
       isLoadingGitConfig: true,
@@ -664,6 +668,7 @@ export class Preferences extends React.Component<
             optOutOfUsageTracking={this.state.optOutOfUsageTracking}
             useExternalCredentialHelper={this.state.useExternalCredentialHelper}
             repositoryIndicatorsEnabled={this.state.repositoryIndicatorsEnabled}
+            pullButtonDefaultAction={this.state.pullButtonDefaultAction}
             onUseWindowsOpenSSHChanged={this.onUseWindowsOpenSSHChanged}
             onOptOutofReportingChanged={this.onOptOutofReportingChanged}
             onUseExternalCredentialHelperChanged={
@@ -671,6 +676,9 @@ export class Preferences extends React.Component<
             }
             onRepositoryIndicatorsEnabledChanged={
               this.onRepositoryIndicatorsEnabledChanged
+            }
+            onPullButtonDefaultActionChanged={
+              this.onPullButtonDefaultActionChanged
             }
           />
         )
@@ -705,6 +713,12 @@ export class Preferences extends React.Component<
     repositoryIndicatorsEnabled: boolean
   ) => {
     this.setState({ repositoryIndicatorsEnabled })
+  }
+
+  private onPullButtonDefaultActionChanged = (
+    pullButtonDefaultAction: PullButtonDefaultAction
+  ) => {
+    this.setState({ pullButtonDefaultAction })
   }
 
   private onLockFileDeleted = () => {
@@ -952,6 +966,15 @@ export class Preferences extends React.Component<
       ) {
         dispatcher.setRepositoryIndicatorsEnabled(
           this.state.repositoryIndicatorsEnabled
+        )
+      }
+
+      if (
+        this.props.pullButtonDefaultAction !==
+        this.state.pullButtonDefaultAction
+      ) {
+        dispatcher.setPullButtonDefaultAction(
+          this.state.pullButtonDefaultAction
         )
       }
 

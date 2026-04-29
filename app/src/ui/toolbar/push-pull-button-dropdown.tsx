@@ -1,6 +1,9 @@
 import React from 'react'
+import * as octicons from '../octicons/octicons.generated'
 import { Button } from '../lib/button'
 import { Octicon, syncClockwise } from '../octicons'
+import { showContextualMenu, IMenuItem } from '../../lib/menu-item'
+import { PullButtonDefaultAction } from '../../lib/app-state'
 import {
   DropdownItem,
   DropdownItemClassName,
@@ -16,8 +19,47 @@ interface IPushPullButtonDropDownProps {
   /** Will the app prompt the user to confirm a force push? */
   readonly askForConfirmationOnForcePush: boolean
 
+  /**
+   * Current default action assigned to the main button click. Used to render
+   * the checked state in the right-click context menu.
+   */
+  readonly pullButtonDefaultAction: PullButtonDefaultAction
+
   readonly fetch: () => void
   readonly forcePushWithLease: () => void
+  readonly pullWithRebase: () => void
+  readonly pullWithMerge: () => void
+
+  /**
+   * Set the default click action for the main button. Triggered from the
+   * right-click context menu on a fetch/pull-strategy item.
+   */
+  readonly onSetPullButtonDefaultAction: (
+    action: PullButtonDefaultAction
+  ) => void
+
+  /** Open the Pull behavior section of the Preferences dialog. */
+  readonly onOpenPreferences: () => void
+}
+
+/**
+ * Map a dropdown item type to the corresponding default-action preference, or
+ * `null` for items that can't be set as the main button's default click.
+ * Fetch is excluded because it's already what the button does when there's
+ * nothing to pull, and force push is too dangerous to bind as the default.
+ */
+function dropdownItemAsDefaultAction(
+  type: DropdownItemType
+): PullButtonDefaultAction | null {
+  switch (type) {
+    case DropdownItemType.PullWithMerge:
+      return 'pull-merge'
+    case DropdownItemType.PullWithRebase:
+      return 'pull-rebase'
+    case DropdownItemType.Fetch:
+    case DropdownItemType.ForcePush:
+      return null
+  }
 }
 
 export class PushPullButtonDropDown extends React.Component<IPushPullButtonDropDownProps> {
@@ -98,8 +140,51 @@ export class PushPullButtonDropDown extends React.Component<IPushPullButtonDropD
           icon: forcePushIcon,
         }
       }
+      case DropdownItemType.PullWithRebase:
+        return {
+          title: `Pull ${remoteName} with rebase`,
+          description: `Replay your local commits on top of ${remoteName} for a linear history`,
+          action: this.props.pullWithRebase,
+          icon: octicons.history,
+        }
+      case DropdownItemType.PullWithMerge:
+        return {
+          title: `Pull ${remoteName}`,
+          description: `Merge changes from ${remoteName} into your local branch`,
+          action: this.props.pullWithMerge,
+          icon: octicons.gitMerge,
+        }
     }
   }
+
+  private onItemContextMenu =
+    (type: DropdownItemType) =>
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault()
+
+      const items: IMenuItem[] = []
+      const asDefault = dropdownItemAsDefaultAction(type)
+
+      if (asDefault !== null) {
+        const isAlreadyDefault =
+          this.props.pullButtonDefaultAction === asDefault
+        items.push({
+          label: 'Set as default action',
+          type: 'checkbox',
+          checked: isAlreadyDefault,
+          enabled: !isAlreadyDefault,
+          action: () => this.props.onSetPullButtonDefaultAction(asDefault),
+        })
+        items.push({ type: 'separator' })
+      }
+
+      items.push({
+        label: 'Pull behavior preferences…',
+        action: this.props.onOpenPreferences,
+      })
+
+      showContextualMenu(items)
+    }
 
   public renderDropdownItem = (type: DropdownItemType) => {
     const item = this.getDropdownItemWithType(type)
@@ -108,6 +193,7 @@ export class PushPullButtonDropDown extends React.Component<IPushPullButtonDropD
         className={DropdownItemClassName}
         key={type}
         onClick={item.action}
+        onContextMenu={this.onItemContextMenu(type)}
       >
         <Octicon symbol={item.icon} />
         <div className="text-container">

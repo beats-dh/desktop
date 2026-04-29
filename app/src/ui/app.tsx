@@ -1602,6 +1602,7 @@ export class App extends React.Component<IAppProps, IAppState> {
             customShell={this.state.customShell}
             titleBarStyle={this.state.titleBarStyle}
             repositoryIndicatorsEnabled={this.state.repositoryIndicatorsEnabled}
+            pullButtonDefaultAction={this.state.pullButtonDefaultAction}
             onEditGlobalGitConfig={this.editGlobalGitConfig}
             underlineLinks={this.state.underlineLinks}
             showDiffCheckMarks={this.state.showDiffCheckMarks}
@@ -3263,6 +3264,7 @@ export class App extends React.Component<IAppProps, IAppState> {
         progress={progress}
         tipState={tip.kind}
         pullWithRebase={pullWithRebase}
+        pullButtonDefaultAction={this.state.pullButtonDefaultAction}
         rebaseInProgress={rebaseInProgress}
         forcePushBranchState={forcePushBranchState}
         shouldNudge={
