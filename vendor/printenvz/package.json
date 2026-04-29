@@ -14,9 +14,6 @@
   "dependencies": {
     "node-gyp": "^12.0.0"
   },
-  "devDependencies": {
-    "node-gyp": "^12.0.0"
-  },
   "keywords": ["native", "environment", "variables", "executable"],
   "author": "",
   "license": "MIT"
