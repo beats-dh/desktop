@@ -5097,6 +5097,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
           const retryAction: RetryAction = {
             type: RetryActionType.Pull,
             repository,
+            pullStrategy,
           }
 
           const willRebase =

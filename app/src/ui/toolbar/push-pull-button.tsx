@@ -77,8 +77,8 @@ interface IPushPullButtonProps {
 
   /**
    * App-level preference picking what the main button does when behind the
-   * remote: `'pull-merge'` (default), `'pull-rebase'`, or `'fetch'`. Settable
-   * via right-click on the dropdown items or in Preferences → Advanced.
+   * remote: `'pull-merge'` (default) or `'pull-rebase'`. Settable via
+   * right-click on the dropdown items or in Preferences → Advanced.
    */
   readonly pullButtonDefaultAction: PullButtonDefaultAction
 

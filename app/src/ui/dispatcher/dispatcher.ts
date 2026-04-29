@@ -2162,6 +2162,12 @@ export class Dispatcher {
         return this.push(retryAction.repository)
 
       case RetryActionType.Pull:
+        if (retryAction.pullStrategy === 'rebase') {
+          return this.pullWithRebase(retryAction.repository)
+        }
+        if (retryAction.pullStrategy === 'merge') {
+          return this.pullWithMerge(retryAction.repository)
+        }
         return this.pull(retryAction.repository)
 
       case RetryActionType.Fetch:
@@ -2796,8 +2802,10 @@ export class Dispatcher {
 
   /**
    * Set the default click action for the main pull/push button when behind
-   * the remote: `'pull-merge'`, `'pull-rebase'`, or `'fetch'`. Picked from the
-   * dropdown's right-click menu or from Preferences → Advanced.
+   * the remote: `'pull-merge'` or `'pull-rebase'`. Picked from the dropdown's
+   * right-click menu or from Preferences → Advanced. Fetch is intentionally
+   * not allowed here — it's already the implicit fallback when there's
+   * nothing to pull/push.
    */
   public setPullButtonDefaultAction(action: PullButtonDefaultAction) {
     this.appStore._setPullButtonDefaultAction(action)
