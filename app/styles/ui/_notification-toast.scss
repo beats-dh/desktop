@@ -82,6 +82,10 @@ $toast-edge-margin: var(--spacing-double);
       line-height: 1.4;
       overflow: hidden;
       text-overflow: ellipsis;
+      // `pre-wrap` honors the `\n` that NotificationsStore embeds between
+      // the PR header line and the comment snippet, so the body keeps its
+      // intentional line break instead of collapsing to a single space.
+      white-space: pre-wrap;
       display: -webkit-box;
       -webkit-line-clamp: 4;
       -webkit-box-orient: vertical;
