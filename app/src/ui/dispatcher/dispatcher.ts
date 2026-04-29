@@ -2821,6 +2821,10 @@ export class Dispatcher {
     this.appStore._setCommitSpellcheckEnabled(commitSpellcheckEnabled)
   }
 
+  public setFormatOnCommit(formatOnCommit: boolean) {
+    this.appStore._setFormatOnCommit(formatOnCommit)
+  }
+
   public setUseWindowsOpenSSH(useWindowsOpenSSH: boolean) {
     this.appStore._setUseWindowsOpenSSH(useWindowsOpenSSH)
   }

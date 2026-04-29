@@ -165,6 +165,7 @@ import {
 import { assertNever, fatalError, forceUnwrap } from '../fatal-error'
 
 import { formatCommitMessage } from '../format-commit-message'
+import { formatFilesInRepo } from '../format'
 import {
   getAccountForCommitMessageGeneration,
   getAccountForRepository,
@@ -455,6 +456,9 @@ const hideWhitespaceInPullRequestDiffKey =
 const commitSpellcheckEnabledDefault = true
 const commitSpellcheckEnabledKey = 'commit-spellcheck-enabled'
 
+const formatOnCommitDefault = false
+const formatOnCommitKey = 'format-on-commit-enabled'
+
 export const tabSizeDefault: number = 4
 const tabSizeKey: string = 'tab-size'
 
@@ -620,6 +624,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
     hideWhitespaceInPullRequestDiffDefault
   /** Whether or not the spellchecker is enabled for commit summary and description */
   private commitSpellcheckEnabled: boolean = commitSpellcheckEnabledDefault
+  /** Whether or not staged files are auto-formatted before each commit. */
+  private formatOnCommit: boolean = formatOnCommitDefault
   private showSideBySideDiff: boolean = ShowSideBySideDiffDefault
 
   private uncommittedChangesStrategy = defaultUncommittedChangesStrategy
@@ -1197,6 +1203,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       repositoryIndicatorsEnabled: this.repositoryIndicatorsEnabled,
       pullButtonDefaultAction: this.pullButtonDefaultAction,
       commitSpellcheckEnabled: this.commitSpellcheckEnabled,
+      formatOnCommit: this.formatOnCommit,
       currentDragElement: this.currentDragElement,
       lastThankYou: this.lastThankYou,
       useCustomEditor: this.useCustomEditor,
@@ -2417,6 +2424,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       commitSpellcheckEnabledKey,
       commitSpellcheckEnabledDefault
     )
+    this.formatOnCommit = getBoolean(formatOnCommitKey, formatOnCommitDefault)
     this.showSideBySideDiff = getShowSideBySideDiff()
 
     this.selectedTheme = getPersistedThemeName()
@@ -3427,9 +3435,32 @@ export class AppStore extends TypedBaseStore<IAppState> {
   ): Promise<boolean> {
     const state = this.repositoryStateCache.get(repository)
     const files = state.changesState.workingDirectory.files
-    const selectedFiles = files.filter(file => {
+    let selectedFiles = files.filter(file => {
       return file.selection.getSelectionType() !== DiffSelectionType.None
     })
+
+    // Auto-format-on-commit: rewrite the staged files in place using the
+    // matching tool (Prettier, clang-format, stylua, …) and force the
+    // committed selection to "include all" for any file we touched. The
+    // user opted into whole-file formatting via Preferences, so we don't
+    // try to preserve hunk-level selections after the rewrite.
+    if (this.formatOnCommit && selectedFiles.length > 0) {
+      try {
+        const result = await formatFilesInRepo(
+          repository.path,
+          selectedFiles.map(f => f.path)
+        )
+        if (result.formatted.length > 0) {
+          const touched = new Set(result.formatted)
+          selectedFiles = selectedFiles.map(f =>
+            touched.has(f.path) ? f.withIncludeAll(true) : f
+          )
+        }
+      } catch (err) {
+        // Never block a commit because formatting itself blew up.
+        log.error('[format] formatFilesInRepo threw, continuing commit', err)
+      }
+    }
 
     const gitStore = this.gitStoreCache.get(repository)
 
@@ -3945,6 +3976,17 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     setBoolean(commitSpellcheckEnabledKey, commitSpellcheckEnabled)
     this.commitSpellcheckEnabled = commitSpellcheckEnabled
+
+    this.emitUpdate()
+  }
+
+  public _setFormatOnCommit(formatOnCommit: boolean) {
+    if (this.formatOnCommit === formatOnCommit) {
+      return
+    }
+
+    setBoolean(formatOnCommitKey, formatOnCommit)
+    this.formatOnCommit = formatOnCommit
 
     this.emitUpdate()
   }

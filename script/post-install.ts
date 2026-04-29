@@ -2,10 +2,11 @@
 
 import * as Path from 'path'
 import { spawnSync, SpawnSyncOptions } from 'child_process'
-import { existsSync, readdirSync } from 'fs'
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'fs'
 
 import glob from 'glob'
 import { forceUnwrap } from '../app/src/lib/fatal-error'
+import { downloadFormatTools } from './format-tools-download'
 
 const root = Path.dirname(__dirname)
 
@@ -66,6 +67,29 @@ findYarnVersion(path => {
   if (result.status !== 0) {
     process.exit(result.status || 1)
   }
+
+  // Point Git at the in-tree hooks directory so the pre-commit auto-formatter
+  // is active for everyone who runs `yarn install`. Skipped outside a Git
+  // checkout (e.g., source tarball) so the install still succeeds there.
+  if (existsSync(Path.join(root, '.git'))) {
+    spawnSync('git', ['config', 'core.hooksPath', '.githooks'], options)
+  }
+
+  // legal-eagle@0.16.0 calls `readFileSync` on any node_modules child whose
+  // name matches /(licen[sc]e|copying)/i — including DIRECTORIES (e.g.
+  // `@xml-tools/parser/LICENSES`). That throws EISDIR and aborts the
+  // production build. Patch the package's `readIfExists` to skip non-files.
+  // Idempotent — guarded by a sentinel comment so re-running yarn install
+  // doesn't double-patch.
+  patchLegalEagle()
+
+  // Download per-platform format-tool binaries (shfmt, ruff) into
+  // `app/vendor/format-tools/<plat>-<arch>/`. Bundled by `script/build.ts`
+  // into the packaged app. Network failure here is non-fatal — the
+  // auto-format feature degrades to "skipped" for those tools at runtime.
+  downloadFormatTools(root).catch(err => {
+    console.warn('[post-install] format-tools download failed:', err.message)
+  })
 
   if (!isOffline()) {
     result = spawnSync(
@@ -157,3 +181,49 @@ findYarnVersion(path => {
     )
   }
 })
+
+function patchLegalEagle() {
+  const legalEaglePath = Path.join(
+    root,
+    'node_modules/legal-eagle/lib/legal-eagle.js'
+  )
+  if (!existsSync(legalEaglePath)) {
+    return
+  }
+
+  // Each patch step is independently idempotent — its replacement looks
+  // for the original text and rewrites it. Once applied, the original
+  // text is gone, so re-running just no-ops on each step.
+  let content = readFileSync(legalEaglePath, 'utf8')
+  const before = content
+
+  // Step 1: add `statSync` to the destructured `fs` import.
+  content = content.replace(
+    "_ref2 = require('fs'), existsSync = _ref2.existsSync, readdirSync = _ref2.readdirSync, readFileSync = _ref2.readFileSync;",
+    "_ref2 = require('fs'), existsSync = _ref2.existsSync, readdirSync = _ref2.readdirSync, readFileSync = _ref2.readFileSync, statSync = _ref2.statSync;"
+  )
+
+  // Step 2: make `readIfExists` skip directories. A `LICENSES/` folder
+  // named like a license file (e.g. `@xml-tools/parser/LICENSES`) would
+  // otherwise crash the dep-tree walk with EISDIR.
+  content = content.replace(
+    "readIfExists = function(path) {\n    if (existsSync(path)) {\n      return readFileSync(path, 'utf8');\n    }\n  };",
+    "readIfExists = function(path) {\n    /* desktop-fork-patch: skip-dir */\n    if (existsSync(path) && statSync(path).isFile()) {\n      return readFileSync(path, 'utf8');\n    }\n  };"
+  )
+
+  // Step 3: once `readIfExists` can return undefined (it always could in
+  // theory, but now happens deterministically for dirs), `licenseFromText
+  // (undefined)` crashes with "Cannot read properties of undefined". Guard.
+  content = content.replace(
+    "licenseFromText = function(licenseText) {\n    if (licenseText.indexOf('Apache License') > -1) {",
+    "licenseFromText = function(licenseText) {\n    if (licenseText == null) { return; }\n    if (licenseText.indexOf('Apache License') > -1) {"
+  )
+
+  if (content === before) {
+    return
+  }
+  writeFileSync(legalEaglePath, content)
+  console.log(
+    '[post-install] legal-eagle patched (readIfExists guards dirs, licenseFromText guards null)'
+  )
+}
