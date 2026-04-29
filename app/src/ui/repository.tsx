@@ -16,6 +16,7 @@ import {
   ChangesSelectionKind,
   IConstrainedValue,
   CommitOptions,
+  HistoryTabMode,
 } from '../lib/app-state'
 import { Dispatcher } from './dispatcher'
 import { IssuesStore, GitHubUserStore } from '../lib/stores'
@@ -157,6 +158,29 @@ interface IRepositoryViewState {
 const enum Tab {
   Changes = 0,
   History = 1,
+  Compare = 2,
+}
+
+function tabFromSection(section: RepositorySectionTab): Tab {
+  switch (section) {
+    case RepositorySectionTab.Changes:
+      return Tab.Changes
+    case RepositorySectionTab.History:
+      return Tab.History
+    case RepositorySectionTab.Compare:
+      return Tab.Compare
+  }
+}
+
+function sectionFromTab(tab: Tab): RepositorySectionTab {
+  switch (tab) {
+    case Tab.Changes:
+      return RepositorySectionTab.Changes
+    case Tab.History:
+      return RepositorySectionTab.History
+    case Tab.Compare:
+      return RepositorySectionTab.Compare
+  }
 }
 
 export class RepositoryView extends React.Component<
@@ -221,10 +245,7 @@ export class RepositoryView extends React.Component<
   }
 
   private renderTabs(): JSX.Element {
-    const selectedTab =
-      this.props.state.selectedSection === RepositorySectionTab.Changes
-        ? Tab.Changes
-        : Tab.History
+    const selectedTab = tabFromSection(this.props.state.selectedSection)
 
     return (
       <TabBar selectedIndex={selectedTab} onTabClicked={this.onTabClicked}>
@@ -235,6 +256,10 @@ export class RepositoryView extends React.Component<
 
         <div className="with-indicator" id="history-tab">
           <span>History</span>
+        </div>
+
+        <div className="with-indicator" id="compare-tab">
+          <span>Compare</span>
         </div>
       </TabBar>
     )
@@ -335,7 +360,7 @@ export class RepositoryView extends React.Component<
     )
   }
 
-  private renderCompareSidebar(): JSX.Element {
+  private renderCompareSidebar(viewMode: 'history' | 'compare'): JSX.Element {
     const { repository, dispatcher, state, aheadBehindStore, emoji } =
       this.props
     const {
@@ -356,7 +381,10 @@ export class RepositoryView extends React.Component<
       this.previousSection === RepositorySectionTab.Changes
         ? this.state.compareListScrollTop
         : undefined
-    this.previousSection = RepositorySectionTab.History
+    this.previousSection =
+      viewMode === 'compare'
+        ? RepositorySectionTab.Compare
+        : RepositorySectionTab.History
     this.forceCompareListScrollTop = false
 
     return (
@@ -365,6 +393,7 @@ export class RepositoryView extends React.Component<
         repository={repository}
         isLocalRepository={remote === null}
         compareState={compareState}
+        viewMode={viewMode}
         selectedCommitShas={shas}
         shasToHighlight={compareState.shasToHighlight}
         currentBranch={currentBranch}
@@ -397,7 +426,9 @@ export class RepositoryView extends React.Component<
     if (selectedSection === RepositorySectionTab.Changes) {
       return this.renderChangesSidebar()
     } else if (selectedSection === RepositorySectionTab.History) {
-      return this.renderCompareSidebar()
+      return this.renderCompareSidebar('history')
+    } else if (selectedSection === RepositorySectionTab.Compare) {
+      return this.renderCompareSidebar('compare')
     } else {
       return assertNever(selectedSection, 'Unknown repository section')
     }
@@ -642,7 +673,10 @@ export class RepositoryView extends React.Component<
     const selectedSection = this.props.state.selectedSection
     if (selectedSection === RepositorySectionTab.Changes) {
       return this.renderContentForChanges()
-    } else if (selectedSection === RepositorySectionTab.History) {
+    } else if (
+      selectedSection === RepositorySectionTab.History ||
+      selectedSection === RepositorySectionTab.Compare
+    ) {
       return this.renderContentForHistory()
     } else {
       return assertNever(selectedSection, 'Unknown repository section')
@@ -710,28 +744,36 @@ export class RepositoryView extends React.Component<
   }
 
   private changeTab() {
-    const section =
-      this.props.state.selectedSection === RepositorySectionTab.History
-        ? RepositorySectionTab.Changes
-        : RepositorySectionTab.History
+    // Cycle Changes → History → Compare → Changes …
+    const current = this.props.state.selectedSection
+    const next =
+      current === RepositorySectionTab.Changes
+        ? RepositorySectionTab.History
+        : current === RepositorySectionTab.History
+        ? RepositorySectionTab.Compare
+        : RepositorySectionTab.Changes
 
-    this.props.dispatcher.changeRepositorySection(
-      this.props.repository,
-      section
-    )
+    this.props.dispatcher.changeRepositorySection(this.props.repository, next)
   }
 
   private onTabClicked = (tab: Tab) => {
-    const section =
-      tab === Tab.History
-        ? RepositorySectionTab.History
-        : RepositorySectionTab.Changes
+    const section = sectionFromTab(tab)
 
     this.props.dispatcher.changeRepositorySection(
       this.props.repository,
       section
     )
-    if (!!section) {
+
+    if (section === RepositorySectionTab.History) {
+      // Reset compareState back to plain History so the History tab always
+      // shows the current branch's commit list, even if the Compare tab had
+      // been used previously to set up a Behind/Ahead comparison.
+      this.props.dispatcher.executeCompare(this.props.repository, {
+        kind: HistoryTabMode.History,
+      })
+    }
+
+    if (section !== RepositorySectionTab.Changes) {
       this.props.dispatcher.updateCompareForm(this.props.repository, {
         showBranchList: false,
       })

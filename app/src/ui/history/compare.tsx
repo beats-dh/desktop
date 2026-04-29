@@ -39,6 +39,14 @@ interface ICompareSidebarProps {
   readonly repository: Repository
   readonly isLocalRepository: boolean
   readonly compareState: ICompareState
+  /**
+   * Which sidebar UI to render:
+   *   - `'history'` shows the commit search box and the commit list of the
+   *     current branch.
+   *   - `'compare'` shows the branch picker that lets the user compare the
+   *     current branch against another branch (Behind/Ahead tabs).
+   */
+  readonly viewMode: 'history' | 'compare'
   readonly emoji: Map<string, Emoji>
   readonly commitLookup: Map<string, Commit>
   readonly localCommitSHAs: ReadonlyArray<string>
@@ -73,6 +81,14 @@ interface ICompareSidebarState {
 
   /** Data to be reordered via keyboard */
   readonly keyboardReorderData?: KeyboardInsertionData
+
+  /**
+   * Free-text filter applied to the commit list in History mode. Matches
+   * commit SHA, summary, body, author name, and author email
+   * case-insensitively. Local to this component so it doesn't persist
+   * across repository switches.
+   */
+  readonly commitFilterText: string
 }
 
 /** If we're within this many rows from the bottom, load the next history batch. */
@@ -92,7 +108,7 @@ export class CompareSidebar extends React.Component<
   public constructor(props: ICompareSidebarProps) {
     super(props)
 
-    this.state = { focusedBranch: null }
+    this.state = { focusedBranch: null, commitFilterText: '' }
   }
 
   public componentWillReceiveProps(nextProps: ICompareSidebarProps) {
@@ -160,30 +176,114 @@ export class CompareSidebar extends React.Component<
   }
 
   public render() {
-    const { branches, filterText, showBranchList } = this.props.compareState
+    const { branches, filterText, showBranchList, formState } =
+      this.props.compareState
     const placeholderText = getPlaceholderText(this.props.compareState)
+    const isCompareView = this.props.viewMode === 'compare'
+    const showCommitFilter =
+      !isCompareView &&
+      !showBranchList &&
+      formState.kind === HistoryTabMode.History
 
     return (
-      <div id="compare-view" role="tabpanel" aria-labelledby="history-tab">
+      <div
+        id="compare-view"
+        role="tabpanel"
+        aria-labelledby={isCompareView ? 'compare-tab' : 'history-tab'}
+      >
         <div className="compare-form">
-          <FancyTextBox
-            ariaLabel="Branch filter"
-            symbol={octicons.gitBranch}
-            displayClearButton={true}
-            placeholder={placeholderText}
-            onFocus={this.onTextBoxFocused}
-            value={filterText}
-            disabled={!branches.some(b => !b.isDesktopForkRemoteBranch)}
-            onRef={this.onTextBoxRef}
-            onValueChanged={this.onBranchFilterTextChanged}
-            onKeyDown={this.onBranchFilterKeyDown}
-            onSearchCleared={this.handleEscape}
-          />
+          {isCompareView && (
+            <FancyTextBox
+              ariaLabel="Branch filter"
+              symbol={octicons.gitBranch}
+              displayClearButton={true}
+              placeholder={placeholderText}
+              onFocus={this.onTextBoxFocused}
+              value={filterText}
+              disabled={!branches.some(b => !b.isDesktopForkRemoteBranch)}
+              onRef={this.onTextBoxRef}
+              onValueChanged={this.onBranchFilterTextChanged}
+              onKeyDown={this.onBranchFilterKeyDown}
+              onSearchCleared={this.handleEscape}
+            />
+          )}
+          {showCommitFilter && (
+            <FancyTextBox
+              ariaLabel="Filter commits"
+              symbol={octicons.search}
+              displayClearButton={true}
+              placeholder={
+                __DARWIN__
+                  ? 'Filter Commits by SHA, Title or Author…'
+                  : 'Filter commits by SHA, title or author…'
+              }
+              value={this.state.commitFilterText}
+              onValueChanged={this.onCommitFilterTextChanged}
+              onSearchCleared={this.onCommitFilterCleared}
+              onRef={this.onCommitFilterTextBoxRef}
+            />
+          )}
         </div>
 
-        {showBranchList ? this.renderFilterList() : this.renderCommits()}
+        {isCompareView && showBranchList
+          ? this.renderFilterList()
+          : this.renderCommits()}
       </div>
     )
+  }
+
+  private commitFilterTextBox: TextBox | null = null
+
+  private onCommitFilterTextBoxRef = (textbox: TextBox) => {
+    this.commitFilterTextBox = textbox
+  }
+
+  private onCommitFilterTextChanged = (commitFilterText: string) => {
+    this.setState({ commitFilterText })
+  }
+
+  private onCommitFilterCleared = () => {
+    this.setState({ commitFilterText: '' })
+    this.commitFilterTextBox?.focus()
+  }
+
+  /**
+   * Apply the commit search filter — matches commits whose SHA, summary,
+   * body, author name, or author email contains the query (case-insensitive).
+   * Returns the original list when the filter is empty, so unfiltered renders
+   * skip the work entirely.
+   */
+  private getFilteredCommitSHAs(
+    commitSHAs: ReadonlyArray<string>
+  ): ReadonlyArray<string> {
+    const query = this.state.commitFilterText.trim()
+    if (query === '') {
+      return commitSHAs
+    }
+
+    // Build a case-insensitive regex once instead of lowercasing the user's
+    // query AND every field of every commit on each filter call. The user's
+    // input is escaped so any regex meta-character ends up matched literally
+    // — they're typing a plain substring, not a pattern.
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const re = new RegExp(escaped, 'i')
+    const { commitLookup } = this.props
+
+    return commitSHAs.filter(sha => {
+      if (re.test(sha)) {
+        return true
+      }
+      const commit = commitLookup.get(sha)
+      if (!commit) {
+        return false
+      }
+      return (
+        re.test(commit.summary) ||
+        re.test(commit.body) ||
+        re.test(commit.author.name) ||
+        re.test(commit.author.email)
+      )
+    })
   }
 
   private onBranchesListRef = (branchList: BranchList | null) => {
@@ -217,9 +317,13 @@ export class CompareSidebar extends React.Component<
 
   private renderCommitList() {
     const { formState, commitSHAs } = this.props.compareState
+    const filteredSHAs = this.getFilteredCommitSHAs(commitSHAs)
+    const filterIsActive = this.state.commitFilterText.trim() !== ''
 
     let emptyListMessage: string | JSX.Element
-    if (formState.kind === HistoryTabMode.History) {
+    if (filterIsActive && filteredSHAs.length === 0) {
+      emptyListMessage = 'No commits match your filter'
+    } else if (formState.kind === HistoryTabMode.History) {
       emptyListMessage = 'No history'
     } else {
       const currentlyComparedBranchName = formState.comparisonBranch.name
@@ -244,7 +348,7 @@ export class CompareSidebar extends React.Component<
         gitHubRepository={this.props.repository.gitHubRepository}
         isLocalRepository={this.props.isLocalRepository}
         commitLookup={this.props.commitLookup}
-        commitSHAs={commitSHAs}
+        commitSHAs={filteredSHAs}
         selectedSHAs={this.props.selectedCommitShas}
         shasToHighlight={this.props.shasToHighlight}
         localCommitSHAs={this.props.localCommitSHAs}
