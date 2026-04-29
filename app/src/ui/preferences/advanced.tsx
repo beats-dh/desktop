@@ -2,18 +2,24 @@ import * as React from 'react'
 import { DialogContent } from '../dialog'
 import { Checkbox, CheckboxValue } from '../lib/checkbox'
 import { LinkButton } from '../lib/link-button'
+import { Select } from '../lib/select'
 import { SamplesURL } from '../../lib/stats'
 import { isWindowsOpenSSHAvailable } from '../../lib/ssh/ssh'
+import { PullButtonDefaultAction } from '../../lib/app-state'
 
 interface IAdvancedPreferencesProps {
   readonly useWindowsOpenSSH: boolean
   readonly optOutOfUsageTracking: boolean
   readonly useExternalCredentialHelper: boolean
   readonly repositoryIndicatorsEnabled: boolean
+  readonly pullButtonDefaultAction: PullButtonDefaultAction
   readonly onUseWindowsOpenSSHChanged: (checked: boolean) => void
   readonly onOptOutofReportingChanged: (checked: boolean) => void
   readonly onUseExternalCredentialHelperChanged: (checked: boolean) => void
   readonly onRepositoryIndicatorsEnabledChanged: (enabled: boolean) => void
+  readonly onPullButtonDefaultActionChanged: (
+    action: PullButtonDefaultAction
+  ) => void
 }
 
 interface IAdvancedPreferencesState {
@@ -68,6 +74,13 @@ export class Advanced extends React.Component<
     this.props.onRepositoryIndicatorsEnabledChanged(event.currentTarget.checked)
   }
 
+  private onPullButtonDefaultActionChanged = (
+    event: React.FormEvent<HTMLSelectElement>
+  ) => {
+    const value = event.currentTarget.value as PullButtonDefaultAction
+    this.props.onPullButtonDefaultActionChanged(value)
+  }
+
   private onUseWindowsOpenSSHChanged = (
     event: React.FormEvent<HTMLInputElement>
   ) => {
@@ -112,6 +125,36 @@ export class Advanced extends React.Component<
               currently selected repository, but may improve overall app
               performance for users with many repositories.
             </p>
+          </div>
+        </div>
+        <div className="advanced-section">
+          <h2>Pull behavior</h2>
+          <Select
+            label="Default action when behind the remote"
+            value={this.props.pullButtonDefaultAction}
+            onChange={this.onPullButtonDefaultActionChanged}
+          >
+            <option value="pull-merge">Pull (merge)</option>
+            <option value="pull-rebase">Pull with rebase</option>
+          </Select>
+          <div className="git-settings-description">
+            <p>
+              Picks what the main button does when there are commits to pull.
+              Right-clicking an option in the dropdown sets it as the default
+              too.
+            </p>
+            <ul>
+              <li>
+                <strong>Pull (merge)</strong> — runs{' '}
+                <code>git pull --no-rebase</code>, creating a merge commit when
+                local and remote diverge.
+              </li>
+              <li>
+                <strong>Pull with rebase</strong> — runs{' '}
+                <code>git pull --rebase</code>, replaying your local commits on
+                top of the remote for a linear history.
+              </li>
+            </ul>
           </div>
         </div>
         <div className="advanced-section">

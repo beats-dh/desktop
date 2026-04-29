@@ -38,6 +38,13 @@ export async function pull(
     ) => Promise<'abort' | 'ignore'>
     onTerminalOutputAvailable?: TerminalOutputCallback
     noVerify?: boolean
+    /**
+     * When set, forces the pull strategy regardless of the user's git config:
+     *   - `'rebase'` adds `--rebase`
+     *   - `'merge'`  adds `--no-rebase`
+     * When omitted, git's `pull.rebase` configuration decides.
+     */
+    pullStrategy?: 'rebase' | 'merge'
   }
 ): Promise<void> {
   let opts: IGitStringExecutionOptions = {
@@ -93,9 +100,17 @@ export async function pull(
     options.progressCallback({ kind, title, value: 0, remote: remote.name })
   }
 
+  const strategyArgs =
+    options?.pullStrategy === 'rebase'
+      ? ['--rebase']
+      : options?.pullStrategy === 'merge'
+      ? ['--no-rebase']
+      : []
+
   const args = [
     ...gitRebaseArguments(),
     'pull',
+    ...strategyArgs,
     ...(await getDefaultPullDivergentBranchArguments(repository)),
     '--recurse-submodules',
     ...(options?.progressCallback ? ['--progress'] : []),
