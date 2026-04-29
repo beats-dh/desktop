@@ -256,27 +256,33 @@ export class CompareSidebar extends React.Component<
   private getFilteredCommitSHAs(
     commitSHAs: ReadonlyArray<string>
   ): ReadonlyArray<string> {
-    const query = this.state.commitFilterText.trim().toLowerCase()
+    const query = this.state.commitFilterText.trim()
     if (query === '') {
       return commitSHAs
     }
 
+    // Build a case-insensitive regex once instead of lowercasing the user's
+    // query AND every field of every commit on each filter call. The user's
+    // input is escaped so any regex meta-character ends up matched literally
+    // — they're typing a plain substring, not a pattern.
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const re = new RegExp(escaped, 'i')
     const { commitLookup } = this.props
+
     return commitSHAs.filter(sha => {
-      if (sha.toLowerCase().includes(query)) {
+      if (re.test(sha)) {
         return true
       }
       const commit = commitLookup.get(sha)
       if (!commit) {
         return false
       }
-      const haystack = [
-        commit.summary,
-        commit.body,
-        commit.author.name,
-        commit.author.email,
-      ]
-      return haystack.some(field => field.toLowerCase().includes(query))
+      return (
+        re.test(commit.summary) ||
+        re.test(commit.body) ||
+        re.test(commit.author.name) ||
+        re.test(commit.author.email)
+      )
     })
   }
 
