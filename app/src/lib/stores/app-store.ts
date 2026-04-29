@@ -283,6 +283,7 @@ import {
   enableCustomIntegration,
 } from '../feature-flag'
 import { Banner, BannerType } from '../../models/banner'
+import { INotificationToast } from '../../models/notification-toast'
 import { ComputedAction } from '../../models/computed-action'
 import {
   createDesktopStashEntry,
@@ -547,6 +548,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
   private focusCommitMessage = false
   private currentFoldout: Foldout | null = null
   private currentBanner: Banner | null = null
+  private notificationToasts: ReadonlyArray<INotificationToast> = []
+  /** Auto-dismiss for floating notification toasts, in milliseconds. */
+  private static readonly NotificationToastDuration = 7_000
+  private toastDismissTimers = new Map<string, NodeJS.Timeout>()
   private emitQueued = false
 
   private readonly localRepositoryStateLookup = new Map<
@@ -782,6 +787,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.notificationsStore.onPullRequestCommentNotification(
       this.onPullRequestCommentNotification
     )
+
+    this.notificationsStore.onNotificationShown((title, body, onClick) => {
+      this._pushNotificationToast({ title, body, onClick })
+    })
 
     onShowInstallingUpdate(this.onShowInstallingUpdate)
   }
@@ -1147,6 +1156,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       isUpdateAvailableBannerVisible: this.isUpdateAvailableBannerVisible,
       isUpdateShowcaseVisible: this.isUpdateShowcaseVisible,
       currentBanner: this.currentBanner,
+      notificationToasts: this.notificationToasts,
       askToMoveToApplicationsFolderSetting:
         this.askToMoveToApplicationsFolderSetting,
       useExternalCredentialHelper: this.useExternalCredentialHelper,
@@ -6449,6 +6459,41 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
 
     this.currentBanner = null
+    this.emitUpdate()
+  }
+
+  /**
+   * Pushes a new floating notification toast onto the stack and schedules it
+   * to auto-dismiss after `NotificationToastDuration`. Returns the generated
+   * id so callers can dismiss it earlier if needed.
+   */
+  public _pushNotificationToast(toast: Omit<INotificationToast, 'id'>): string {
+    const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const newToast: INotificationToast = { id, ...toast }
+    this.notificationToasts = [newToast, ...this.notificationToasts]
+
+    const timer = setTimeout(
+      () => this._dismissNotificationToast(id),
+      AppStore.NotificationToastDuration
+    )
+    this.toastDismissTimers.set(id, timer)
+
+    this.emitUpdate()
+    return id
+  }
+
+  public _dismissNotificationToast(id: string) {
+    const timer = this.toastDismissTimers.get(id)
+    if (timer !== undefined) {
+      clearTimeout(timer)
+      this.toastDismissTimers.delete(id)
+    }
+
+    if (!this.notificationToasts.some(t => t.id === id)) {
+      return
+    }
+
+    this.notificationToasts = this.notificationToasts.filter(t => t.id !== id)
     this.emitUpdate()
   }
 
