@@ -13,7 +13,14 @@
 //                   format API on each file's contents, and write the
 //                   result back ourselves.
 
-import { existsSync, readFileSync, writeFileSync } from 'fs'
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  readSync,
+  writeFileSync,
+} from 'fs'
 import { join } from 'path'
 
 export interface FormatToolBase {
@@ -23,6 +30,20 @@ export interface FormatToolBase {
   readonly displayName: string
   /** Lower-cased extensions (no leading dot) this tool handles. */
   readonly extensions: ReadonlyArray<string>
+  /**
+   * Lower-cased basenames (no path) the tool also claims, beyond the
+   * extension match. Used for files like `Dockerfile`, `Makefile`, etc.
+   * that don't carry an extension. Matched case-insensitively.
+   */
+  readonly filenames?: ReadonlyArray<string>
+  /**
+   * Shebang interpreters this tool handles (e.g. `bash`, `sh`, `python`).
+   * If a file has no extension match and no filename match, we read its
+   * first line and check for `#!.../<interpreter>` (with optional `env`).
+   * The basename of the interpreter is matched, so `/usr/bin/env bash`
+   * and `/bin/bash` both resolve to `bash`.
+   */
+  readonly shebangs?: ReadonlyArray<string>
   /**
    * File names checked at the repo root that signal the user has configured
    * this formatter for the project. We refuse to format if none are present
@@ -239,6 +260,11 @@ export const FORMAT_TOOLS: ReadonlyArray<FormatTool> = [
     displayName: 'shfmt',
     resolveBin: resolveShfmtBin,
     extensions: ['sh', 'bash', 'zsh', 'bats'],
+    // Common extensionless shell scripts in repos. shfmt itself uses the
+    // file's first-line shebang to decide what flavor it is, so anything
+    // that *looks* like a shell script gets routed here.
+    filenames: ['.bashrc', '.zshrc', '.profile', '.bash_profile'],
+    shebangs: ['sh', 'bash', 'zsh', 'ksh', 'dash'],
     // shfmt has no native config file — `.editorconfig` is what users
     // typically configure it with, and its presence is the standard
     // opt-in signal across Shell tooling.
@@ -251,6 +277,7 @@ export const FORMAT_TOOLS: ReadonlyArray<FormatTool> = [
     displayName: 'Ruff',
     resolveBin: resolveRuffBin,
     extensions: ['py', 'pyi'],
+    shebangs: ['python', 'python2', 'python3'],
     // Either an explicit ruff config or a pyproject.toml (which ruff also
     // reads, looking for `[tool.ruff]`). We don't validate the section
     // exists — just the file presence — to keep the probe cheap.
@@ -264,10 +291,13 @@ export const FORMAT_TOOLS: ReadonlyArray<FormatTool> = [
     // No good standalone npm package or single-file binary release; the
     // toolchain is too large to bundle. Detect a system install via PATH
     // — users with Rust set up get formatting for free, others skip.
+    // Edition is intentionally NOT pinned via `--edition`: rustfmt picks
+    // it up from `Cargo.toml`'s `[package].edition`. Hard-coding 2021
+    // would silently rewrite repos on 2018 or 2024 syntax.
     resolveBin: resolveRustfmtBin,
     extensions: ['rs'],
     configFiles: ['rustfmt.toml', '.rustfmt.toml'],
-    buildArgs: files => ['--edition', '2021', ...files],
+    buildArgs: files => [...files],
   },
   {
     kind: 'spawn',
@@ -285,13 +315,75 @@ export const FORMAT_TOOLS: ReadonlyArray<FormatTool> = [
   },
 ]
 
+/**
+ * Try to identify the formatter for a file by extension first (cheapest),
+ * then by basename for known extensionless scripts (`.bashrc`, etc.), and
+ * finally by reading the file's first line for a `#!` shebang. Returns
+ * `null` when no tool claims the file.
+ *
+ * `filePath` is expected to be an absolute path so we can read the file
+ * for the shebang fallback. Callers that pass a repo-relative path will
+ * still get extension/filename matches but skip the shebang probe.
+ */
 export function getFormatToolForFile(filePath: string): FormatTool | null {
-  const match = /\.([^./\\]+)$/.exec(filePath)
-  if (!match) {
+  // 1. Extension match (cheap — pure string scan, no I/O).
+  const extMatch = /\.([^./\\]+)$/.exec(filePath)
+  if (extMatch) {
+    const ext = extMatch[1].toLowerCase()
+    const byExt = FORMAT_TOOLS.find(t => t.extensions.includes(ext))
+    if (byExt) {
+      return byExt
+    }
+  }
+
+  // 2. Basename match for extensionless files we know about.
+  const basename = filePath.replace(/^.*[\\/]/, '').toLowerCase()
+  const byName = FORMAT_TOOLS.find(t =>
+    t.filenames?.some(name => name.toLowerCase() === basename)
+  )
+  if (byName) {
+    return byName
+  }
+
+  // 3. Shebang probe — read just the first line and look for an
+  //    interpreter we recognise. Skipped for relative paths and on read
+  //    errors (file moved, permission, etc.) so we never crash the
+  //    commit flow over a missing optional probe.
+  if (FORMAT_TOOLS.some(t => t.shebangs?.length)) {
+    const interpreter = readShebangInterpreter(filePath)
+    if (interpreter !== null) {
+      const byShebang = FORMAT_TOOLS.find(t =>
+        t.shebangs?.includes(interpreter)
+      )
+      if (byShebang) {
+        return byShebang
+      }
+    }
+  }
+
+  return null
+}
+
+function readShebangInterpreter(filePath: string): string | null {
+  try {
+    if (!filePath.match(/^([a-zA-Z]:[\\/]|\/)/)) {
+      return null
+    }
+    // 256 bytes is plenty for `#!/usr/bin/env <interpreter> <flags>`.
+    const fd = openSync(filePath, 'r')
+    try {
+      const buf = Buffer.alloc(256)
+      const read = readSync(fd, buf, 0, 256, 0)
+      const head = buf.slice(0, read).toString('utf8').split('\n', 1)[0]
+      const m = /^#!\s*(?:\S*\/env\s+)?(\S+)/.exec(head)
+      if (m === null) return null
+      return m[1].replace(/.*[\\/]/, '').toLowerCase()
+    } finally {
+      closeSync(fd)
+    }
+  } catch {
     return null
   }
-  const ext = match[1].toLowerCase()
-  return FORMAT_TOOLS.find(t => t.extensions.includes(ext)) ?? null
 }
 
 export function repoHasToolConfig(

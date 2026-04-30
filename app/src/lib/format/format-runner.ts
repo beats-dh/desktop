@@ -54,6 +54,16 @@ function spawnTool(
   })
 }
 
+/**
+ * Cap on how many file paths we pass to a single spawn invocation. Windows
+ * caps the entire CreateProcess command line at ~32 KB; Linux's `getconf
+ * ARG_MAX` is much higher (megabytes) but exec failures are equally
+ * unrecoverable. 50 keeps us well under any platform limit even when paths
+ * are deeply nested, while still amortising the spawn cost over a useful
+ * batch.
+ */
+const SPAWN_BATCH_SIZE = 50
+
 async function runSpawnTool(
   tool: SpawnFormatTool,
   files: ReadonlyArray<string>,
@@ -72,20 +82,23 @@ async function runSpawnTool(
     return
   }
 
-  const { status, stderr } = await spawnTool(
-    bin,
-    tool.buildArgs(files),
-    repoPath
-  )
-  if (status === 0) {
-    formatted.push(...files)
-  } else {
-    log.warn(`[format] ${tool.id} exited with ${status}: ${stderr.trim()}`)
-    for (const f of files) {
-      skipped.push({
-        path: f,
-        reason: `${tool.displayName} failed (exit ${status})`,
-      })
+  for (let i = 0; i < files.length; i += SPAWN_BATCH_SIZE) {
+    const batch = files.slice(i, i + SPAWN_BATCH_SIZE)
+    const { status, stderr } = await spawnTool(
+      bin,
+      tool.buildArgs(batch),
+      repoPath
+    )
+    if (status === 0) {
+      formatted.push(...batch)
+    } else {
+      log.warn(`[format] ${tool.id} exited with ${status}: ${stderr.trim()}`)
+      for (const f of batch) {
+        skipped.push({
+          path: f,
+          reason: `${tool.displayName} failed (exit ${status})`,
+        })
+      }
     }
   }
 }
