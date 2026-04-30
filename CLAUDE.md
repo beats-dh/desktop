@@ -58,7 +58,13 @@ yarn format:staged          # formata só o que está staged (mesma lógica do h
 yarn format:all             # formata todos os arquivos tracked
 ```
 
-ESLint usa regras customizadas em `eslint-rules/` (TypeScript, compiladas via `yarn check:eslint`) além de `eslint-plugin-github`, `eslint-plugin-react`, `eslint-plugin-jsdoc`. Prettier 2.x.
+ESLint usa regras customizadas em `eslint-rules/` (TypeScript, compiladas via `yarn check:eslint`) além de `eslint-plugin-github`, `eslint-plugin-react`, `eslint-plugin-jsdoc`.
+
+> **Duas versões do Prettier coexistem no repo:**
+> - **Prettier 2.x** — devDep do root `package.json`, usada pelos scripts `yarn lint` / `yarn lint:fix` e pelo dev hook em `.githooks/pre-commit`. Formata o código *deste* repositório (a fonte do GitHub Desktop).
+> - **Prettier 3.x** — runtime dep em `app/package.json`, bundled no app. Usada pela feature de auto-format-on-commit (Preferences > Advanced) pra formatar arquivos do *repo do usuário final*. Roda via `require('prettier').format()` em `app/src/lib/format/format-language.ts`.
+>
+> As duas não compartilham configuração nem se conflitam — cada uma resolve o seu próprio `.prettierrc` em runtime.
 
 #### Auto-format no commit (pre-commit hook do dev)
 
@@ -107,9 +113,11 @@ Tools baixados (shfmt, ruff): [script/format-tools-download.ts](script/format-to
 
 Tools system-only (rustfmt, gofmt): nada bundled. `which()` resolve no PATH do usuário; ausente → skip silencioso.
 
-##### Patch defensivo do legal-eagle
+##### Patch do legal-eagle (via patch-package)
 
-`legal-eagle@0.16.0` faz `readFileSync` em qualquer entrada de `node_modules` cujo nome casa com `/(licen[sc]e|copying)/i` — incluindo **diretórios** como `@xml-tools/parser/LICENSES`. Isso quebra builds de produção com EISDIR. [script/post-install.ts:patchLegalEagle](script/post-install.ts) aplica um patch idempotente: adiciona `statSync` ao import do `fs` e gating `readIfExists` com `statSync(path).isFile()`. Sentinela `/* desktop-fork-patch: skip-dir */` evita re-aplicação.
+`legal-eagle@0.16.0` faz `readFileSync` em qualquer entrada de `node_modules` cujo nome casa com `/(licen[sc]e|copying)/i` — incluindo **diretórios** como `@xml-tools/parser/LICENSES`. Isso quebra builds de produção com EISDIR.
+
+[`patches/legal-eagle+0.16.0.patch`](patches/legal-eagle+0.16.0.patch) gating `readIfExists` com `statSync(path).isFile()` e null-guard em `licenseFromText`. Aplicado cross-platform via `patch-package` em [`script/post-install.ts`](script/post-install.ts). Idempotente — `patch-package` reverse-checks antes de aplicar. Patches Linux-específicos (`patches/electron-installer-redhat+3.4.0.patch`) também passam pelo mesmo mecanismo.
 
 ### Testes
 
