@@ -2,7 +2,7 @@
 
 import * as Path from 'path'
 import { spawnSync, SpawnSyncOptions } from 'child_process'
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync } from 'fs'
 
 import glob from 'glob'
 import { forceUnwrap } from '../app/src/lib/fatal-error'
@@ -75,13 +75,23 @@ findYarnVersion(path => {
     spawnSync('git', ['config', 'core.hooksPath', '.githooks'], options)
   }
 
-  // legal-eagle@0.16.0 calls `readFileSync` on any node_modules child whose
-  // name matches /(licen[sc]e|copying)/i — including DIRECTORIES (e.g.
-  // `@xml-tools/parser/LICENSES`). That throws EISDIR and aborts the
-  // production build. Patch the package's `readIfExists` to skip non-files.
-  // Idempotent — guarded by a sentinel comment so re-running yarn install
-  // doesn't double-patch.
-  patchLegalEagle()
+  // Apply patches/*.patch via patch-package. Cross-platform (uses Node, no
+  // dependency on a system `patch` binary) and idempotent (`--reverse`-checks
+  // before applying). Currently covers:
+  //   - legal-eagle+0.16.0.patch  (skip dirs in readIfExists, guard nulls in
+  //                                licenseFromText — fixes prod license-dump
+  //                                crash on @xml-tools/parser/LICENSES dir)
+  //   - electron-installer-redhat+3.4.0.patch  (Linux RPM packaging)
+  result = spawnSync(
+    process.platform === 'win32' ? 'npx.cmd' : 'npx',
+    ['patch-package'],
+    options
+  )
+  if (result.status !== 0) {
+    console.warn(
+      `[post-install] patch-package exited with ${result.status} — patches may not be applied`
+    )
+  }
 
   // Download per-platform format-tool binaries (shfmt, ruff) into
   // `app/vendor/format-tools/<plat>-<arch>/`. Bundled by `script/build.ts`
@@ -131,30 +141,7 @@ findYarnVersion(path => {
     }
   }
 
-  // Linux-specific: apply patches from the patches/ directory
-  if (process.platform === 'linux') {
-    const patchesDir = Path.join(root, 'patches')
-    if (existsSync(patchesDir)) {
-      const patches = readdirSync(patchesDir).filter(f => f.endsWith('.patch'))
-      for (const patch of patches) {
-        const patchPath = Path.join(patchesDir, patch)
-        result = spawnSync(
-          'patch',
-          ['-p1', '--forward', '--force', '--input', patchPath],
-          {
-            ...options,
-            cwd: root,
-          }
-        )
-        if (result.status !== 0 && result.status !== 1) {
-          // status 1 means already applied (idempotent), only fail on other errors
-          console.warn(
-            `Warning: patch ${patch} may have failed (status ${result.status})`
-          )
-        }
-      }
-    }
-  }
+  // (Patches in patches/ are applied above by patch-package, cross-platform.)
 
   // Capture output here so CI failures include the Playwright-specific error.
   result = spawnSync(
@@ -182,48 +169,3 @@ findYarnVersion(path => {
   }
 })
 
-function patchLegalEagle() {
-  const legalEaglePath = Path.join(
-    root,
-    'node_modules/legal-eagle/lib/legal-eagle.js'
-  )
-  if (!existsSync(legalEaglePath)) {
-    return
-  }
-
-  // Each patch step is independently idempotent — its replacement looks
-  // for the original text and rewrites it. Once applied, the original
-  // text is gone, so re-running just no-ops on each step.
-  let content = readFileSync(legalEaglePath, 'utf8')
-  const before = content
-
-  // Step 1: add `statSync` to the destructured `fs` import.
-  content = content.replace(
-    "_ref2 = require('fs'), existsSync = _ref2.existsSync, readdirSync = _ref2.readdirSync, readFileSync = _ref2.readFileSync;",
-    "_ref2 = require('fs'), existsSync = _ref2.existsSync, readdirSync = _ref2.readdirSync, readFileSync = _ref2.readFileSync, statSync = _ref2.statSync;"
-  )
-
-  // Step 2: make `readIfExists` skip directories. A `LICENSES/` folder
-  // named like a license file (e.g. `@xml-tools/parser/LICENSES`) would
-  // otherwise crash the dep-tree walk with EISDIR.
-  content = content.replace(
-    "readIfExists = function(path) {\n    if (existsSync(path)) {\n      return readFileSync(path, 'utf8');\n    }\n  };",
-    "readIfExists = function(path) {\n    /* desktop-fork-patch: skip-dir */\n    if (existsSync(path) && statSync(path).isFile()) {\n      return readFileSync(path, 'utf8');\n    }\n  };"
-  )
-
-  // Step 3: once `readIfExists` can return undefined (it always could in
-  // theory, but now happens deterministically for dirs), `licenseFromText
-  // (undefined)` crashes with "Cannot read properties of undefined". Guard.
-  content = content.replace(
-    "licenseFromText = function(licenseText) {\n    if (licenseText.indexOf('Apache License') > -1) {",
-    "licenseFromText = function(licenseText) {\n    if (licenseText == null) { return; }\n    if (licenseText.indexOf('Apache License') > -1) {"
-  )
-
-  if (content === before) {
-    return
-  }
-  writeFileSync(legalEaglePath, content)
-  console.log(
-    '[post-install] legal-eagle patched (readIfExists guards dirs, licenseFromText guards null)'
-  )
-}
