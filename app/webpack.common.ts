@@ -4,7 +4,18 @@ import webpack from 'webpack'
 import merge from 'webpack-merge'
 import { getReplacements } from './app-info'
 
-export const externals = ['7zip']
+// Anything listed here is excluded from the webpack bundle and instead
+// installed verbatim into out/node_modules at packaging time (see
+// copyDependencies in script/build.ts → filterExternals). Add a dependency
+// here when its binary or filesystem layout matters at runtime — e.g. format
+// tools that we spawn as a CLI rather than import as a JS module.
+export const externals = [
+  '7zip',
+  'clang-format-node',
+  'prettier',
+  '@prettier/plugin-xml',
+  '@johnnymorganz/stylua',
+]
 
 const outputDir = 'out'
 export const replacements = getReplacements()

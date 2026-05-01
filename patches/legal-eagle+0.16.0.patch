@@ -1,0 +1,31 @@
+diff --git a/node_modules/legal-eagle/lib/legal-eagle.js b/node_modules/legal-eagle/lib/legal-eagle.js
+index 8a8d9ec..b9d0c1f 100644
+--- a/node_modules/legal-eagle/lib/legal-eagle.js
++++ b/node_modules/legal-eagle/lib/legal-eagle.js
+@@ -8,7 +8,7 @@
+
+   _ref1 = require('path'), basename = _ref1.basename, extname = _ref1.extname, join = _ref1.join;
+
+-  _ref2 = require('fs'), existsSync = _ref2.existsSync, readdirSync = _ref2.readdirSync, readFileSync = _ref2.readFileSync;
++  _ref2 = require('fs'), existsSync = _ref2.existsSync, readdirSync = _ref2.readdirSync, readFileSync = _ref2.readFileSync, statSync = _ref2.statSync;
+
+   module.exports = function(options, cb) {
+     var omitPermissive, overrides, path;
+@@ -215,6 +215,7 @@
+   };
+
+   licenseFromText = function(licenseText) {
++    if (licenseText == null) { return; }
+     if (licenseText.indexOf('Apache License') > -1) {
+       return 'Apache';
+     } else if (isMITLicense(licenseText)) {
+@@ -236,7 +237,8 @@
+   };
+
+   readIfExists = function(path) {
+-    if (existsSync(path)) {
++    /* desktop-fork-patch: skip-dir */
++    if (existsSync(path) && statSync(path).isFile()) {
+       return readFileSync(path, 'utf8');
+     }
+   };

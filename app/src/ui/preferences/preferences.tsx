@@ -92,6 +92,7 @@ interface IPreferencesProps {
   readonly notificationsEnabled: boolean
   readonly optOutOfUsageTracking: boolean
   readonly useExternalCredentialHelper: boolean
+  readonly formatOnCommit: boolean
   readonly initialSelectedTab?: PreferencesTab
   readonly confirmRepositoryRemoval: boolean
   readonly confirmDiscardChanges: boolean
@@ -137,6 +138,7 @@ interface IPreferencesState {
   readonly notificationsEnabled: boolean
   readonly optOutOfUsageTracking: boolean
   readonly useExternalCredentialHelper: boolean
+  readonly formatOnCommit: boolean
   readonly confirmRepositoryRemoval: boolean
   readonly confirmDiscardChanges: boolean
   readonly confirmDiscardChangesPermanently: boolean
@@ -227,6 +229,7 @@ export class Preferences extends React.Component<
       notificationsEnabled: true,
       optOutOfUsageTracking: false,
       useExternalCredentialHelper: false,
+      formatOnCommit: false,
       confirmRepositoryRemoval: false,
       confirmDiscardChanges: false,
       confirmDiscardChangesPermanently: false,
@@ -311,6 +314,7 @@ export class Preferences extends React.Component<
       notificationsEnabled: this.props.notificationsEnabled,
       optOutOfUsageTracking: this.props.optOutOfUsageTracking,
       useExternalCredentialHelper: this.props.useExternalCredentialHelper,
+      formatOnCommit: this.props.formatOnCommit,
       confirmRepositoryRemoval: this.props.confirmRepositoryRemoval,
       confirmDiscardChanges: this.props.confirmDiscardChanges,
       confirmDiscardChangesPermanently:
@@ -669,6 +673,7 @@ export class Preferences extends React.Component<
             useExternalCredentialHelper={this.state.useExternalCredentialHelper}
             repositoryIndicatorsEnabled={this.state.repositoryIndicatorsEnabled}
             pullButtonDefaultAction={this.state.pullButtonDefaultAction}
+            formatOnCommit={this.state.formatOnCommit}
             onUseWindowsOpenSSHChanged={this.onUseWindowsOpenSSHChanged}
             onOptOutofReportingChanged={this.onOptOutofReportingChanged}
             onUseExternalCredentialHelperChanged={
@@ -680,6 +685,7 @@ export class Preferences extends React.Component<
             onPullButtonDefaultActionChanged={
               this.onPullButtonDefaultActionChanged
             }
+            onFormatOnCommitChanged={this.onFormatOnCommitChanged}
           />
         )
         break
@@ -731,6 +737,10 @@ export class Preferences extends React.Component<
 
   private onUseWindowsOpenSSHChanged = (useWindowsOpenSSH: boolean) => {
     this.setState({ useWindowsOpenSSH })
+  }
+
+  private onFormatOnCommitChanged = (formatOnCommit: boolean) => {
+    this.setState({ formatOnCommit })
   }
 
   private onShowCommitLengthWarningChanged = (
@@ -1012,6 +1022,7 @@ export class Preferences extends React.Component<
     dispatcher.setUseWindowsOpenSSH(this.state.useWindowsOpenSSH)
     dispatcher.setShowCommitLengthWarning(this.state.showCommitLengthWarning)
     dispatcher.setNotificationsEnabled(this.state.notificationsEnabled)
+    dispatcher.setFormatOnCommit(this.state.formatOnCommit)
 
     await dispatcher.setStatsOptOut(this.state.optOutOfUsageTracking, false)
 
