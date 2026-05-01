@@ -529,6 +529,13 @@ const selectedCopilotModelsKey = 'selected-copilot-models'
 export const showChangesFilterDefault = true
 
 export class AppStore extends TypedBaseStore<IAppState> {
+  /** Auto-dismiss for floating notification toasts, in milliseconds. */
+  private static readonly NotificationToastDuration = 7_000
+
+  /** Monotonic counter feeding into toast ids — uniqueness in-process is
+   * the only requirement here, so a counter beats any randomness source. */
+  private static toastIdCounter = 0
+
   private readonly gitStoreCache: GitStoreCache
 
   private accounts: ReadonlyArray<Account> = new Array<Account>()
@@ -549,8 +556,6 @@ export class AppStore extends TypedBaseStore<IAppState> {
   private currentFoldout: Foldout | null = null
   private currentBanner: Banner | null = null
   private notificationToasts: ReadonlyArray<INotificationToast> = []
-  /** Auto-dismiss for floating notification toasts, in milliseconds. */
-  private static readonly NotificationToastDuration = 7_000
   private toastDismissTimers = new Map<string, NodeJS.Timeout>()
   private emitQueued = false
 
@@ -6468,7 +6473,12 @@ export class AppStore extends TypedBaseStore<IAppState> {
    * id so callers can dismiss it earlier if needed.
    */
   public _pushNotificationToast(toast: Omit<INotificationToast, 'id'>): string {
-    const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    // Toast ids only need to be unique within the running process — they
+    // map a toast in the UI to its dismiss timer, never travel anywhere.
+    // A monotonic counter is correct here and avoids the eslint
+    // `insecure-random` rule that flags `Math.random` even though the
+    // randomness was decorative.
+    const id = `toast-${Date.now()}-${++AppStore.toastIdCounter}`
     const newToast: INotificationToast = { id, ...toast }
     this.notificationToasts = [newToast, ...this.notificationToasts]
 
