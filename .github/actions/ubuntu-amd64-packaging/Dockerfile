@@ -37,7 +37,19 @@ RUN curl -sL 'https://nodejs.org/dist/v22.22.2/node-v22.22.2-linux-x64.tar.xz' |
 RUN npm install --global yarn
 
 # install new enough git to work with repository
-RUN add-apt-repository ppa:git-core/ppa -y
+#
+# The previous form was `add-apt-repository ppa:git-core/ppa -y`, but that
+# tool hits api.launchpad.net at build time to look up the PPA's metadata,
+# and Launchpad's API is regularly slow / times out from Docker build hosts.
+# We add the PPA the manual way instead: drop the deb line straight into
+# sources.list.d and fetch the signing key from keyserver.ubuntu.com (much
+# more reliable than the API). Same end state, build doesn't depend on
+# Launchpad being responsive.
+RUN install -d -m 0755 /etc/apt/keyrings && \
+    curl -sSf 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xE1DD270288B4E6030699E45FA1715D88E1DF1F24' \
+      | gpg --dearmor -o /etc/apt/keyrings/git-core.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/git-core.gpg] https://ppa.launchpadcontent.net/git-core/ppa/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) main" \
+      > /etc/apt/sources.list.d/git-core-ppa.list
 RUN apt update && apt install -y git
 RUN git --version
 
