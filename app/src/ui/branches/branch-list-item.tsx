@@ -22,25 +22,33 @@ interface IBranchListItemProps {
   /** The name of the branch */
   readonly name: string
 
-  /** The branch model — kept here so we can subscribe to ahead/behind without
-   * forcing every parent to compute it. The `name` prop above is still the
-   * source of truth for the rendered label (it's the highlighted version). */
-  readonly branch: Branch
+  /**
+   * The branch model — kept here so we can subscribe to ahead/behind
+   * without forcing every parent to compute it. The `name` prop above is
+   * still the source of truth for the rendered label (it's the highlighted
+   * version). Optional for callers that just want a plain label-style row
+   * (dialog pickers, branch-select widget) and don't care about push
+   * status — the indicator stays off in that case.
+   */
+  readonly branch?: Branch
 
-  /** The repo the branch belongs to. Needed by the AheadBehindStore key. */
-  readonly repository: Repository
+  /** The repo the branch belongs to. Needed by the AheadBehindStore key.
+   * Optional for the same reason as `branch`. */
+  readonly repository?: Repository
 
-  /** Shared store that lazily computes ahead/behind between two SHAs. */
-  readonly aheadBehindStore: AheadBehindStore
+  /** Shared store that lazily computes ahead/behind between two SHAs.
+   * Optional — without it the item paints with no push-status decoration. */
+  readonly aheadBehindStore?: AheadBehindStore
 
   /**
    * Tip SHA of the branch's tracked upstream, when there is one. `undefined`
    * means either the branch has no upstream at all (purely local) or the
    * upstream ref hasn't been fetched yet — both are treated the same here:
    * the item paints itself as "unpushed" because there's nothing on the
-   * remote that matches the local tip.
+   * remote that matches the local tip. Only consulted when the other
+   * `branch` / `repository` / `aheadBehindStore` props are also provided.
    */
-  readonly upstreamSha: string | undefined
+  readonly upstreamSha?: string
 
   /** Specifies whether this item is currently selected */
   readonly isCurrentBranch: boolean
@@ -91,11 +99,12 @@ export class BranchListItem extends React.Component<
     // Re-subscribe whenever the comparison endpoints change. Branch tips
     // shift when the user pulls / pushes, and the upstream sha changes
     // after a fetch — both should refresh the ahead/behind paint without
-    // needing a full re-render of the parent.
+    // needing a full re-render of the parent. Tolerate the dialog-picker
+    // call sites where `branch` / `repository` aren't provided.
     if (
-      prevProps.branch.tip.sha !== this.props.branch.tip.sha ||
+      prevProps.branch?.tip.sha !== this.props.branch?.tip.sha ||
       prevProps.upstreamSha !== this.props.upstreamSha ||
-      prevProps.repository.path !== this.props.repository.path
+      prevProps.repository?.path !== this.props.repository?.path
     ) {
       this.subscribeToAheadBehind()
     }
@@ -112,6 +121,18 @@ export class BranchListItem extends React.Component<
     this.unsubscribeFromAheadBehind()
 
     const { aheadBehindStore, repository, branch, upstreamSha } = this.props
+
+    // Caller didn't opt into the push-status indicator (dialog pickers,
+    // branch-select widget). Skip the subscription entirely — the row
+    // renders as a plain label.
+    if (
+      aheadBehindStore === undefined ||
+      repository === undefined ||
+      branch === undefined
+    ) {
+      this.setState({ aheadBehind: undefined })
+      return
+    }
 
     // No upstream → no ahead/behind to compute. Visual state is driven by
     // `isUnpushed()` directly.
@@ -160,7 +181,17 @@ export class BranchListItem extends React.Component<
    * without the tint.
    */
   private isUnpushed(): boolean {
-    const { upstreamSha } = this.props
+    // Feature opt-in: callers without the ahead/behind plumbing get no
+    // decoration, period. Avoids painting every dialog-picker entry as
+    // "unpushed" just because we don't know better.
+    const { aheadBehindStore, repository, branch, upstreamSha } = this.props
+    if (
+      aheadBehindStore === undefined ||
+      repository === undefined ||
+      branch === undefined
+    ) {
+      return false
+    }
     const { aheadBehind } = this.state
     if (upstreamSha === undefined) {
       return true

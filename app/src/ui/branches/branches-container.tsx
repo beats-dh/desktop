@@ -275,11 +275,11 @@ export class BranchesContainer extends React.Component<
       matches,
       this.props.currentBranch,
       authorDate,
+      this.onDropOntoBranch,
+      this.onDropOntoCurrentBranch,
       this.props.repository,
       this.props.aheadBehindStore,
-      this.getUpstreamShaByBranchName(),
-      this.onDropOntoBranch,
-      this.onDropOntoCurrentBranch
+      this.getUpstreamShaByBranchName()
     )
   }
 

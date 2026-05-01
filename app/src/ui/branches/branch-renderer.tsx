@@ -10,16 +10,24 @@ import { IMatches } from '../../lib/fuzzy-find'
 import { getRelativeTimeInfoFromDate } from '../relative-time'
 import { getPreferAbsoluteDates } from '../../models/formatting-preferences'
 
+/**
+ * Renders one row of a branch list. The trailing `repository` /
+ * `aheadBehindStore` / `upstreamShaByBranchName` triple is OPTIONAL — pass
+ * it from contexts where the unpushed/behind indicator should appear
+ * (toolbar branch dropdown). Dialog pickers (rebase/cherry-pick target
+ * picker, branch-select widget) can omit them and the row renders with no
+ * push-status decoration.
+ */
 export function renderDefaultBranch(
   item: IBranchListItem,
   matches: IMatches,
   currentBranch: Branch | null,
   authorDate: Date | undefined,
-  repository: Repository,
-  aheadBehindStore: AheadBehindStore,
-  upstreamShaByBranchName: ReadonlyMap<string, string>,
   onDropOntoBranch?: (branchName: string) => void,
-  onDropOntoCurrentBranch?: () => void
+  onDropOntoCurrentBranch?: () => void,
+  repository?: Repository,
+  aheadBehindStore?: AheadBehindStore,
+  upstreamShaByBranchName?: ReadonlyMap<string, string>
 ): JSX.Element {
   const branch = item.branch
   const currentBranchName = currentBranch ? currentBranch.name : null
@@ -29,7 +37,7 @@ export function renderDefaultBranch(
   // cases handled identically by the item: no upstream at all (purely
   // local branch — already tinted as `unpushed`), and upstream listed but
   // its remote tracking entry hasn't arrived yet (fetch in flight).
-  const upstreamSha = upstreamShaByBranchName.get(branch.name)
+  const upstreamSha = upstreamShaByBranchName?.get(branch.name)
   return (
     <BranchListItem
       name={branch.name}
