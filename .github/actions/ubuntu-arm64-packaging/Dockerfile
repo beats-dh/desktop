@@ -30,7 +30,13 @@ RUN curl -sL 'https://nodejs.org/dist/v22.22.2/node-v22.22.2-linux-x64.tar.xz' |
 RUN npm install --global yarn
 
 # install new enough git to work with repository
-RUN add-apt-repository ppa:git-core/ppa -y
+# Manual PPA setup — see ubuntu-amd64-packaging/Dockerfile for rationale.
+# `add-apt-repository` calls api.launchpad.net which times out frequently.
+RUN install -d -m 0755 /etc/apt/keyrings && \
+    curl -sSf 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xE1DD270288B4E6030699E45FA1715D88E1DF1F24' \
+      | gpg --dearmor -o /etc/apt/keyrings/git-core.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/git-core.gpg] https://ppa.launchpadcontent.net/git-core/ppa/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) main" \
+      > /etc/apt/sources.list.d/git-core-ppa.list
 RUN apt update && apt install -y git
 RUN git --version
 

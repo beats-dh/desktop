@@ -104,6 +104,7 @@ export class CompareSidebar extends React.Component<
   private commitListRef = React.createRef<CommitList>()
   private loadingMoreCommitsPromise: Promise<void> | null = null
   private resultCount = 0
+  private commitFilterTextBox: TextBox | null = null
 
   public constructor(props: ICompareSidebarProps) {
     super(props)
@@ -231,8 +232,6 @@ export class CompareSidebar extends React.Component<
       </div>
     )
   }
-
-  private commitFilterTextBox: TextBox | null = null
 
   private onCommitFilterTextBoxRef = (textbox: TextBox) => {
     this.commitFilterTextBox = textbox
