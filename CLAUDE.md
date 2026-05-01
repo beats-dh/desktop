@@ -7,6 +7,12 @@ Este arquivo orienta o Claude Code (claude.ai/code) ao trabalhar neste repositó
 ## Regras Obrigatórias
 
 - Sempre responder em **PT-BR**, independentemente do idioma da pergunta ou comando usado.
+- **App é multiplataforma — Linux, Windows e macOS.** Apesar do nome "Linux fork", as features e fixes adicionados ao fork **DEVEM** funcionar nos 3 sistemas. Específicos:
+  - Não usar utilities POSIX-only (`patch`, `chmod -x`, `sh`-isms) sem fallback Windows. Preferir Node APIs (`fs`, `child_process` com `shell: process.platform === 'win32'` quando necessário).
+  - Resolver paths com `path.join` / `path.sep`, nunca hardcodear `/` ou `\`.
+  - Spawn de processo: `spawn(cmd, args)` sem `shell: true` é o padrão; em scripts `.cmd` (Windows) usar `shell: true` ou resolver direto pro `.exe`.
+  - Bundling de binários: ter caminho per-plataforma (`win32-x64`, `linux-x64`, `darwin-arm64`, etc.) e fallback `null` quando a combinação não tem prebuilt.
+  - Antes de aplicar fix de bot, conferir se a mudança não quebra outra plataforma. CI roda em Linux/Windows/macOS — todas devem passar.
 - Nunca compilar, empacotar ou rodar o app (`yarn start`, `yarn build:*`, `yarn package`, `yarn test:e2e:*`) sem o usuário pedir explicitamente — esse projeto é Electron e os builds são caros (webpack + electron-packager).
 - Branch atual é `linux-update-3.5.8` (fork Linux). A branch base para PRs é `linux`, **não** `main` nem `development`. Sempre conferir antes de abrir PR.
 

@@ -3445,20 +3445,47 @@ export class AppStore extends TypedBaseStore<IAppState> {
     // user opted into whole-file formatting via Preferences, so we don't
     // try to preserve hunk-level selections after the rewrite.
     if (this.formatOnCommit && selectedFiles.length > 0) {
-      try {
-        const result = await formatFilesInRepo(
-          repository.path,
-          selectedFiles.map(f => f.path)
-        )
-        if (result.formatted.length > 0) {
-          const touched = new Set(result.formatted)
+      // Deleted files are part of the commit but not on disk anymore — a
+      // CLI formatter handed a deleted path will return non-zero and that
+      // failure poisons the whole batch (see format-runner's chunking).
+      // Skip them upfront; they're committed as deletes regardless.
+      const formattablePaths = selectedFiles
+        .filter(f => f.status.kind !== AppFileStatusKind.Deleted)
+        .map(f => f.path)
+
+      if (formattablePaths.length > 0) {
+        try {
+          const result = await formatFilesInRepo(
+            repository.path,
+            formattablePaths
+          )
+          if (result.formatted.length > 0) {
+            const touched = new Set(result.formatted)
+            selectedFiles = selectedFiles.map(f =>
+              touched.has(f.path) ? f.withIncludeAll(true) : f
+            )
+          }
+        } catch (err) {
+          // formatFilesInRepo is supposed to never throw — every spawn /
+          // jsModule call is wrapped, and partial successes are returned
+          // in `result.formatted`. If it does throw we have NO list of
+          // touched files, which means some on-disk files may already have
+          // been rewritten while the in-memory `selectedFiles` selections
+          // still reference the pre-format content. Continuing with stale
+          // selections would produce a corrupt commit (line ranges no
+          // longer matching the file). Bail out of the auto-format step
+          // by re-staging EVERY file as include-all so whatever's on disk
+          // wins, then continue with the commit. Whole-file commits are
+          // the user's chosen contract for this feature anyway.
+          log.error(
+            '[format] formatFilesInRepo threw — re-staging all files as include-all to avoid stale selections',
+            err
+          )
+          const touched = new Set(formattablePaths)
           selectedFiles = selectedFiles.map(f =>
             touched.has(f.path) ? f.withIncludeAll(true) : f
           )
         }
-      } catch (err) {
-        // Never block a commit because formatting itself blew up.
-        log.error('[format] formatFilesInRepo threw, continuing commit', err)
       }
     }
 

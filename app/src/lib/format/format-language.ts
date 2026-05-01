@@ -390,5 +390,28 @@ export function repoHasToolConfig(
   repoPath: string,
   tool: FormatTool
 ): boolean {
+  // Ruff has a special probe: `pyproject.toml` is too generic — every Python
+  // project ships one — so its bare presence isn't proof the user opted into
+  // Ruff. Require an explicit `[tool.ruff]` section in pyproject.toml, OR a
+  // standalone `ruff.toml` / `.ruff.toml` (which only Ruff users ship).
+  if (tool.id === 'ruff') {
+    if (
+      existsSync(join(repoPath, 'ruff.toml')) ||
+      existsSync(join(repoPath, '.ruff.toml'))
+    ) {
+      return true
+    }
+    const pyproject = join(repoPath, 'pyproject.toml')
+    if (!existsSync(pyproject)) {
+      return false
+    }
+    try {
+      const contents = readFileSync(pyproject, 'utf8')
+      return /^\s*\[tool\.ruff(?:\.[\w-]+)?\]/m.test(contents)
+    } catch {
+      return false
+    }
+  }
+
   return tool.configFiles.some(name => existsSync(join(repoPath, name)))
 }
