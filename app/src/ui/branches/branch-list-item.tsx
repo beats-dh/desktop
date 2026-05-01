@@ -13,22 +13,37 @@ import { TooltippedContent } from '../lib/tooltipped-content'
 import { enableAccessibleListToolTips } from '../../lib/feature-flag'
 import { getPreferAbsoluteDates } from '../../models/formatting-preferences'
 import { formatDate } from '../../lib/format-date'
+import { Branch, IAheadBehind } from '../../models/branch'
+import { Repository } from '../../models/repository'
+import { AheadBehindStore } from '../../lib/stores/ahead-behind-store'
+import type { Disposable } from 'event-kit'
 
 interface IBranchListItemProps {
   /** The name of the branch */
   readonly name: string
 
-  /** Specifies whether this item is currently selected */
-  readonly isCurrentBranch: boolean
+  /** The branch model — kept here so we can subscribe to ahead/behind without
+   * forcing every parent to compute it. The `name` prop above is still the
+   * source of truth for the rendered label (it's the highlighted version). */
+  readonly branch: Branch
+
+  /** The repo the branch belongs to. Needed by the AheadBehindStore key. */
+  readonly repository: Repository
+
+  /** Shared store that lazily computes ahead/behind between two SHAs. */
+  readonly aheadBehindStore: AheadBehindStore
 
   /**
-   * `true` when the branch has no upstream tracking ref — i.e. it was
-   * created locally and never pushed to a remote, so every commit on it
-   * is unpushed. The list item picks up an `unpushed` modifier class to
-   * surface that state visually (color + tooltip), prompting the user to
-   * push before they lose the work.
+   * Tip SHA of the branch's tracked upstream, when there is one. `undefined`
+   * means either the branch has no upstream at all (purely local) or the
+   * upstream ref hasn't been fetched yet — both are treated the same here:
+   * the item paints itself as "unpushed" because there's nothing on the
+   * remote that matches the local tip.
    */
-  readonly isUnpushed: boolean
+  readonly upstreamSha: string | undefined
+
+  /** Specifies whether this item is currently selected */
+  readonly isCurrentBranch: boolean
 
   /** The characters in the branch name to highlight */
   readonly matches: IMatches
@@ -49,6 +64,11 @@ interface IBranchListItemState {
    * events when dragging.
    */
   readonly isDragInProgress: boolean
+
+  /** Cached ahead/behind for the branch's local tip vs upstream tip. Stays
+   * `undefined` when the branch has no upstream OR while the AheadBehind
+   * subscription is still in flight. */
+  readonly aheadBehind?: IAheadBehind
 }
 
 /** The branch component. */
@@ -56,9 +76,105 @@ export class BranchListItem extends React.Component<
   IBranchListItemProps,
   IBranchListItemState
 > {
+  private aheadBehindSubscription: Disposable | null = null
+
   public constructor(props: IBranchListItemProps) {
     super(props)
     this.state = { isDragInProgress: false }
+  }
+
+  public componentDidMount() {
+    this.subscribeToAheadBehind()
+  }
+
+  public componentDidUpdate(prevProps: IBranchListItemProps) {
+    // Re-subscribe whenever the comparison endpoints change. Branch tips
+    // shift when the user pulls / pushes, and the upstream sha changes
+    // after a fetch — both should refresh the ahead/behind paint without
+    // needing a full re-render of the parent.
+    if (
+      prevProps.branch.tip.sha !== this.props.branch.tip.sha ||
+      prevProps.upstreamSha !== this.props.upstreamSha ||
+      prevProps.repository.path !== this.props.repository.path
+    ) {
+      this.subscribeToAheadBehind()
+    }
+  }
+
+  public componentWillUnmount() {
+    this.unsubscribeFromAheadBehind()
+    if (dragAndDropManager.isDragOfTypeInProgress(DragType.Commit)) {
+      dragAndDropManager.emitLeaveDropTarget()
+    }
+  }
+
+  private subscribeToAheadBehind() {
+    this.unsubscribeFromAheadBehind()
+
+    const { aheadBehindStore, repository, branch, upstreamSha } = this.props
+
+    // No upstream → no ahead/behind to compute. Visual state is driven by
+    // `isUnpushed()` directly.
+    if (upstreamSha === undefined) {
+      this.setState({ aheadBehind: undefined })
+      return
+    }
+
+    // Try the cache first so we paint correctly on first render when the
+    // user re-opens the dropdown for a repo we've already computed.
+    const cached = aheadBehindStore.tryGetAheadBehind(
+      repository,
+      branch.tip.sha,
+      upstreamSha
+    )
+    if (cached !== undefined) {
+      this.setState({ aheadBehind: cached })
+      return
+    }
+
+    this.setState({ aheadBehind: undefined })
+    this.aheadBehindSubscription = aheadBehindStore.getAheadBehind(
+      repository,
+      branch.tip.sha,
+      upstreamSha,
+      aheadBehind => this.setState({ aheadBehind })
+    )
+  }
+
+  private unsubscribeFromAheadBehind() {
+    if (this.aheadBehindSubscription !== null) {
+      this.aheadBehindSubscription.dispose()
+      this.aheadBehindSubscription = null
+    }
+  }
+
+  /**
+   * The branch needs the "you have something to publish" tint when there
+   * are commits on local that aren't on the remote. Two cases:
+   *   1. No upstream at all (`upstreamSha === undefined`) — every commit
+   *      is unpushed by definition.
+   *   2. Upstream exists and we've computed `ahead > 0`.
+   * When `behind > 0` but `ahead === 0` the branch is purely behind
+   * upstream — no local work to lose, just needs a pull. That case is
+   * handled by `isOnlyBehind()` and shows a subtle down-arrow icon
+   * without the tint.
+   */
+  private isUnpushed(): boolean {
+    const { upstreamSha } = this.props
+    const { aheadBehind } = this.state
+    if (upstreamSha === undefined) {
+      return true
+    }
+    return aheadBehind !== undefined && aheadBehind.ahead > 0
+  }
+
+  private isOnlyBehind(): boolean {
+    const { aheadBehind } = this.state
+    return (
+      aheadBehind !== undefined &&
+      aheadBehind.ahead === 0 &&
+      aheadBehind.behind > 0
+    )
   }
 
   private onMouseEnter = () => {
@@ -102,18 +218,27 @@ export class BranchListItem extends React.Component<
   }
 
   public render() {
-    const { authorDate, isCurrentBranch, isUnpushed, name } = this.props
+    const { authorDate, isCurrentBranch, name } = this.props
+
+    const isUnpushed = this.isUnpushed()
+    const isOnlyBehind = this.isOnlyBehind()
 
     const icon = isCurrentBranch ? octicons.check : octicons.gitBranch
     const className = classNames('branches-list-item', {
       'drop-target': this.state.isDragInProgress,
       unpushed: isUnpushed,
+      'only-behind': !isUnpushed && isOnlyBehind,
     })
-    // Hover/focus tooltip on the row's name. We piggy-back on the existing
-    // overflow tooltip when the branch has an upstream; for unpushed
-    // branches we always surface the warning, even on short names where
-    // overflow isn't triggering.
-    const nameTooltip = isUnpushed ? `${name} — not pushed to remote` : name
+
+    // Tooltip rule: surface push status whenever it's interesting (unpushed
+    // or behind), otherwise fall back to overflow-only behaviour for the
+    // branch name. Reuses the branch name as the visible tooltip body.
+    const nameTooltip = isUnpushed
+      ? `${name} — not pushed to remote`
+      : isOnlyBehind
+        ? `${name} — behind remote, pull to update`
+        : name
+    const onlyWhenOverflowed = !isUnpushed && !isOnlyBehind
 
     return (
       /**
@@ -131,7 +256,7 @@ export class BranchListItem extends React.Component<
         <TooltippedContent
           className="name"
           tooltip={nameTooltip}
-          onlyWhenOverflowed={!isUnpushed}
+          onlyWhenOverflowed={onlyWhenOverflowed}
           tagName="div"
           disabled={enableAccessibleListToolTips()}
         >
@@ -148,6 +273,9 @@ export class BranchListItem extends React.Component<
               tooltip={!enableAccessibleListToolTips()}
             />
           ))}
+        {isOnlyBehind && (
+          <Octicon className="behind-indicator" symbol={octicons.arrowDown} />
+        )}
       </div>
     )
   }

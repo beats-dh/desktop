@@ -47,11 +47,13 @@
       flex-grow: revert;
     }
 
-    // Branches without an upstream tracking ref — i.e. created locally and
-    // never pushed. Tint the icon and the name to nudge the user toward
-    // pushing them before the work is lost. Color is reused from the
-    // "additions/new" semantic palette (var(--color-new), green-ish) so it
-    // reads as "you have something to publish" rather than "warning".
+    // Branch has commits that aren't on the remote yet — either there's
+    // no upstream tracking ref at all (purely local branch) or upstream
+    // exists and we're ahead of it. Tint the icon and the name to nudge
+    // the user toward pushing them before the work is lost. Color is
+    // reused from the "additions/new" semantic palette
+    // (var(--color-new), green-ish) so it reads as "you have something to
+    // publish" rather than "warning".
     &.unpushed {
       .icon {
         color: var(--color-new);
@@ -61,6 +63,18 @@
         color: var(--color-new);
         font-style: italic;
       }
+    }
+
+    // Branch is purely behind upstream (no local commits to lose, just
+    // needs a pull). No tint — the existing styling stays neutral so the
+    // user's eye still reads the name normally — but a subtle down-arrow
+    // sits at the right edge to flag that there's something to pull. Mut-
+    // ually exclusive with `.unpushed` (the conditional logic in
+    // BranchListItem.render guarantees only one fires).
+    .behind-indicator {
+      margin-left: var(--spacing-half);
+      color: var(--text-secondary-color);
+      flex-shrink: 0;
     }
   }
 }

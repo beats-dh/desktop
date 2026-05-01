@@ -5,7 +5,8 @@ import {
   Repository,
   isRepositoryWithGitHubRepository,
 } from '../../models/repository'
-import { Branch } from '../../models/branch'
+import { Branch, BranchType } from '../../models/branch'
+import { AheadBehindStore } from '../../lib/stores/ahead-behind-store'
 import { BranchesTab } from '../../models/branches-tab'
 import { PopupType } from '../../models/popup'
 
@@ -42,6 +43,12 @@ import classNames from 'classnames'
 interface IBranchesContainerProps {
   readonly dispatcher: Dispatcher
   readonly repository: Repository
+  /**
+   * Ahead-behind cache shared across the app. The branches list uses it to
+   * mark branches whose local tip is ahead of their tracked upstream — i.e.
+   * have unpushed commits — without re-running git for every list render.
+   */
+  readonly aheadBehindStore: AheadBehindStore
   readonly selectedTab: BranchesTab
   readonly allBranches: ReadonlyArray<Branch>
   readonly defaultBranch: Branch | null
@@ -217,6 +224,47 @@ export class BranchesContainer extends React.Component<
     )
   }
 
+  /**
+   * Memoized lookup from local-branch name to its tracked upstream's tip
+   * SHA. Built once per `allBranches` array reference (the prop is replaced
+   * on each branches refresh, so identity comparison is sufficient). Used
+   * by the row renderer to feed `BranchListItem`'s ahead/behind subscription.
+   */
+  private upstreamShaByBranchSnapshot:
+    | { allBranches: ReadonlyArray<Branch>; map: ReadonlyMap<string, string> }
+    | null = null
+
+  private getUpstreamShaByBranchName(): ReadonlyMap<string, string> {
+    const { allBranches } = this.props
+    if (
+      this.upstreamShaByBranchSnapshot !== null &&
+      this.upstreamShaByBranchSnapshot.allBranches === allBranches
+    ) {
+      return this.upstreamShaByBranchSnapshot.map
+    }
+    // Build a `remoteRefName` (e.g. `origin/main`) → tip-SHA index from the
+    // remote branches in the list, then walk the local branches once and
+    // resolve their `upstream` against that index. O(n) build, O(1)
+    // lookups during render.
+    const remoteShaByName = new Map<string, string>()
+    for (const b of allBranches) {
+      if (b.type === BranchType.Remote) {
+        remoteShaByName.set(b.name, b.tip.sha)
+      }
+    }
+    const map = new Map<string, string>()
+    for (const b of allBranches) {
+      if (b.type === BranchType.Local && b.upstream !== null) {
+        const sha = remoteShaByName.get(b.upstream)
+        if (sha !== undefined) {
+          map.set(b.name, sha)
+        }
+      }
+    }
+    this.upstreamShaByBranchSnapshot = { allBranches, map }
+    return map
+  }
+
   private renderBranch = (
     item: IBranchListItem,
     matches: IMatches,
@@ -227,6 +275,9 @@ export class BranchesContainer extends React.Component<
       matches,
       this.props.currentBranch,
       authorDate,
+      this.props.repository,
+      this.props.aheadBehindStore,
+      this.getUpstreamShaByBranchName(),
       this.onDropOntoBranch,
       this.onDropOntoCurrentBranch
     )

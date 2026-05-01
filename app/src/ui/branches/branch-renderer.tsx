@@ -1,6 +1,8 @@
 import * as React from 'react'
 
 import { Branch } from '../../models/branch'
+import { Repository } from '../../models/repository'
+import { AheadBehindStore } from '../../lib/stores/ahead-behind-store'
 
 import { IBranchListItem } from './group-branches'
 import { BranchListItem } from './branch-list-item'
@@ -13,23 +15,29 @@ export function renderDefaultBranch(
   matches: IMatches,
   currentBranch: Branch | null,
   authorDate: Date | undefined,
+  repository: Repository,
+  aheadBehindStore: AheadBehindStore,
+  upstreamShaByBranchName: ReadonlyMap<string, string>,
   onDropOntoBranch?: (branchName: string) => void,
   onDropOntoCurrentBranch?: () => void
 ): JSX.Element {
   const branch = item.branch
   const currentBranchName = currentBranch ? currentBranch.name : null
-  // A local branch with no upstream tracking ref hasn't been pushed yet —
-  // every commit on it is unpushed. The list item gets a colored modifier
-  // class (see _branches.scss .branches-list-item.unpushed). Only applies
-  // to local branches; remote-tracking entries (`origin/foo`) always have
-  // upstream === null in this model but are filtered out before reaching
-  // this renderer, so the check is safe here.
-  const isUnpushed = branch.upstream === null
+  // For branches that DO have an upstream tracking ref, look up that
+  // upstream's tip SHA so the list item can subscribe to ahead/behind
+  // and tint itself when it has unpushed commits. `undefined` covers two
+  // cases handled identically by the item: no upstream at all (purely
+  // local branch — already tinted as `unpushed`), and upstream listed but
+  // its remote tracking entry hasn't arrived yet (fetch in flight).
+  const upstreamSha = upstreamShaByBranchName.get(branch.name)
   return (
     <BranchListItem
       name={branch.name}
       isCurrentBranch={branch.name === currentBranchName}
-      isUnpushed={isUnpushed}
+      branch={branch}
+      repository={repository}
+      aheadBehindStore={aheadBehindStore}
+      upstreamSha={upstreamSha}
       authorDate={authorDate}
       matches={matches}
       onDropOntoBranch={onDropOntoBranch}

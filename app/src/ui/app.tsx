@@ -3391,6 +3391,7 @@ export class App extends React.Component<IAppProps, IAppState> {
         onDropDownStateChanged={this.onBranchDropdownStateChanged}
         repository={repository}
         repositoryState={selection.state}
+        aheadBehindStore={this.props.aheadBehindStore}
         selectedTab={this.state.selectedBranchesTab}
         pullRequests={branchesState.openPullRequests}
         currentPullRequest={branchesState.currentPullRequest}
