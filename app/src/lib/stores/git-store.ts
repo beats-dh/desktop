@@ -129,6 +129,17 @@ export class GitStore extends BaseStore {
 
   private _allBranches: ReadonlyArray<Branch> = []
 
+  /**
+   * Tip SHA of every local branch's tracked upstream, keyed by the LOCAL
+   * branch name. Built during `mergeRemoteAndLocalBranches` from the same
+   * `getBranches()` payload used to populate `_allBranches` — the dedup
+   * step there throws away the remote `Branch` records, so we capture the
+   * SHAs first while we still have them. Consumed by the branch dropdown
+   * to drive the unpushed indicator without a second async fetch (which
+   * was what caused the orange-paint flash on dropdown open).
+   */
+  private _upstreamShaByLocalBranchName: ReadonlyMap<string, string> = new Map()
+
   private _recentBranches: ReadonlyArray<Branch> = []
 
   private _localCommitSHAs: ReadonlyArray<string> = []
@@ -398,6 +409,9 @@ export class GitStore extends BaseStore {
     }
 
     this._allBranches = this.mergeRemoteAndLocalBranches(localAndRemoteBranches)
+    this._upstreamShaByLocalBranchName = this.buildUpstreamShaMap(
+      localAndRemoteBranches
+    )
 
     // refreshRecentBranches is dependent on having a default branch
     await this.refreshDefaultBranch()
@@ -449,6 +463,37 @@ export class GitStore extends BaseStore {
     }
 
     return allBranchesWithUpstream
+  }
+
+  /**
+   * Index every local branch's upstream tracking ref to its tip SHA. The
+   * lookup needs the FULL list (pre-dedup) because each local branch's
+   * `upstream` field points at a remote ref name (`origin/foo`) and only
+   * the remote branch entries carry the matching tip SHA. Returned map
+   * is keyed by local branch name (not ref) so consumers don't need to
+   * re-derive the ref from the upstream string.
+   */
+  private buildUpstreamShaMap(
+    branches: ReadonlyArray<Branch>
+  ): ReadonlyMap<string, string> {
+    const remoteTipByName = new Map<string, string>()
+    for (const branch of branches) {
+      if (branch.type === BranchType.Remote) {
+        remoteTipByName.set(branch.name, branch.tip.sha)
+      }
+    }
+
+    const result = new Map<string, string>()
+    for (const branch of branches) {
+      if (branch.type !== BranchType.Local || !branch.upstream) {
+        continue
+      }
+      const sha = remoteTipByName.get(branch.upstream)
+      if (sha !== undefined) {
+        result.set(branch.name, sha)
+      }
+    }
+    return result
   }
 
   private async checkPullWithRebase() {
@@ -585,6 +630,14 @@ export class GitStore extends BaseStore {
   /** All branches, including the current branch and the default branch. */
   public get allBranches(): ReadonlyArray<Branch> {
     return this._allBranches
+  }
+
+  /**
+   * Tip SHA of every local branch's tracked upstream, keyed by the LOCAL
+   * branch name. See `_upstreamShaByLocalBranchName` for context.
+   */
+  public get upstreamShaByLocalBranchName(): ReadonlyMap<string, string> {
+    return this._upstreamShaByLocalBranchName
   }
 
   /** The most recently checked out branches. */

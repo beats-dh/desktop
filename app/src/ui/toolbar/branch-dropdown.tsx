@@ -109,6 +109,9 @@ export class BranchDropdown extends React.Component<IBranchDropdownProps> {
     return (
       <BranchesContainer
         allBranches={branchesState.allBranches}
+        upstreamShaByLocalBranchName={
+          branchesState.upstreamShaByLocalBranchName
+        }
         recentBranches={branchesState.recentBranches}
         currentBranch={currentBranch}
         defaultBranch={branchesState.defaultBranch}

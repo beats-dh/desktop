@@ -5,9 +5,8 @@ import {
   Repository,
   isRepositoryWithGitHubRepository,
 } from '../../models/repository'
-import { Branch, BranchType } from '../../models/branch'
+import { Branch } from '../../models/branch'
 import { AheadBehindStore } from '../../lib/stores/ahead-behind-store'
-import { getBranches } from '../../lib/git'
 import { BranchesTab } from '../../models/branches-tab'
 import { PopupType } from '../../models/popup'
 
@@ -52,6 +51,13 @@ interface IBranchesContainerProps {
   readonly aheadBehindStore: AheadBehindStore
   readonly selectedTab: BranchesTab
   readonly allBranches: ReadonlyArray<Branch>
+  /**
+   * Tip SHA of every local branch's tracked upstream, keyed by the local
+   * branch name. Pre-computed in the git-store from the same payload that
+   * builds `allBranches`, so the unpushed indicator can paint correctly
+   * on the very first render — no async fetch needed at this layer.
+   */
+  readonly upstreamShaByLocalBranchName: ReadonlyMap<string, string>
   readonly defaultBranch: Branch | null
   readonly currentBranch: Branch | null
   readonly recentBranches: ReadonlyArray<Branch>
@@ -85,19 +91,6 @@ interface IBranchesContainerState {
     pr: PullRequest
     prListItemTop: number
   } | null
-
-  /**
-   * Tip SHAs for remote-tracking refs in this repo, keyed by their short
-   * name (`origin/main`, etc). Loaded once when the dropdown mounts and
-   * after each `allBranches` refresh. We can't get these from
-   * `props.allBranches` because the git-store's `mergeRemoteAndLocalBranches`
-   * dedupes out any remote branch whose ref is the upstream of a local
-   * branch — exactly the entries we need to compute ahead/behind for the
-   * tracked locals. Mapping starts empty so the dropdown still renders
-   * before the load completes; the unpushed tint just paints in once the
-   * SHAs land.
-   */
-  readonly remoteBranchTipsByRef: ReadonlyMap<string, string>
 }
 
 /** The unified Branches and Pull Requests component. */
@@ -130,50 +123,11 @@ export class BranchesContainer extends React.Component<
       currentPullRequest: props.currentPullRequest,
       branchFilterText: '',
       pullRequestBeingViewed: null,
-      remoteBranchTipsByRef: new Map(),
-    }
-  }
-
-  public componentDidMount() {
-    this.refreshRemoteBranchTips()
-  }
-
-  public componentDidUpdate(prevProps: IBranchesContainerProps) {
-    // The git-store refreshes `allBranches` whenever the working state
-    // shifts (fetch, branch checkout, push). Re-read the remote tips on
-    // those events so the unpushed indicator stays in sync without
-    // needing the user to reopen the dropdown.
-    if (prevProps.allBranches !== this.props.allBranches) {
-      this.refreshRemoteBranchTips()
     }
   }
 
   public componentWillUnmount = () => {
     this.clearPullRequestQuickViewTimer()
-  }
-
-  /**
-   * Loads the remote tracking refs and their tip SHAs for the current
-   * repo via a single `for-each-ref refs/remotes/`. Result is stored in
-   * state and consumed by `renderBranch` to feed the ahead/behind
-   * subscription per branch row. Errors swallowed: failure to load the
-   * map just leaves the unpushed indicator off, which is the correct
-   * fallback (we can't claim "unpushed" without the data to back it up).
-   */
-  private async refreshRemoteBranchTips(): Promise<void> {
-    try {
-      const remoteBranches = await getBranches(
-        this.props.repository,
-        'refs/remotes'
-      )
-      const map = new Map<string, string>()
-      for (const b of remoteBranches) {
-        map.set(b.name, b.tip.sha)
-      }
-      this.setState({ remoteBranchTipsByRef: map })
-    } catch (e) {
-      log.warn('Failed to load remote branch tips for unpushed indicator', e)
-    }
   }
 
   public render() {
@@ -277,48 +231,6 @@ export class BranchesContainer extends React.Component<
     )
   }
 
-  /**
-   * Memoized lookup from local-branch name → tracked upstream's tip SHA.
-   * Rebuilt whenever `allBranches` (which carries the local-branch list +
-   * their `upstream` ref names) or `remoteBranchTipsByRef` (loaded
-   * separately because the deduped `allBranches` no longer carries the
-   * tracked remote tips — see the state field's docstring) changes.
-   * O(n) build, O(1) lookups during render.
-   */
-  private upstreamShaByBranchSnapshot: {
-    allBranches: ReadonlyArray<Branch>
-    remoteBranchTipsByRef: ReadonlyMap<string, string>
-    map: ReadonlyMap<string, string>
-  } | null = null
-
-  private getUpstreamShaByBranchName(): ReadonlyMap<string, string> {
-    const { allBranches } = this.props
-    const { remoteBranchTipsByRef } = this.state
-    if (
-      this.upstreamShaByBranchSnapshot !== null &&
-      this.upstreamShaByBranchSnapshot.allBranches === allBranches &&
-      this.upstreamShaByBranchSnapshot.remoteBranchTipsByRef ===
-        remoteBranchTipsByRef
-    ) {
-      return this.upstreamShaByBranchSnapshot.map
-    }
-    const map = new Map<string, string>()
-    for (const b of allBranches) {
-      if (b.type === BranchType.Local && b.upstream !== null) {
-        const sha = remoteBranchTipsByRef.get(b.upstream)
-        if (sha !== undefined) {
-          map.set(b.name, sha)
-        }
-      }
-    }
-    this.upstreamShaByBranchSnapshot = {
-      allBranches,
-      remoteBranchTipsByRef,
-      map,
-    }
-    return map
-  }
-
   private renderBranch = (
     item: IBranchListItem,
     matches: IMatches,
@@ -333,7 +245,7 @@ export class BranchesContainer extends React.Component<
       this.onDropOntoCurrentBranch,
       this.props.repository,
       this.props.aheadBehindStore,
-      this.getUpstreamShaByBranchName()
+      this.props.upstreamShaByLocalBranchName
     )
   }
 
