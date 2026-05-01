@@ -49,18 +49,18 @@
 
     // Branch has commits that aren't on the remote yet — either there's
     // no upstream tracking ref at all (purely local branch) or upstream
-    // exists and we're ahead of it. Tint the icon and the name to nudge
-    // the user toward pushing them before the work is lost. Color is
-    // reused from the "additions/new" semantic palette
-    // (var(--color-new), green-ish) so it reads as "you have something to
-    // publish" rather than "warning".
+    // exists and we're ahead of it. Paint the icon and the name in the
+    // toolbar's existing "warning" palette (orange) — same variable the
+    // app already uses for warning text in other toolbar dropdowns, so
+    // the user reads it instinctively as "attention, something pending"
+    // rather than "success" (which a green tint would suggest).
     &.unpushed {
       .icon {
-        color: var(--color-new);
+        color: var(--toolbar-dropdown-text-warning-color);
       }
 
       .name {
-        color: var(--color-new);
+        color: var(--toolbar-dropdown-text-warning-color);
         font-style: italic;
       }
     }
