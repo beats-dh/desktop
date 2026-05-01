@@ -144,8 +144,14 @@ jobs:
           AZURE_TENANT_ID: ${{ secrets.AZURE_CODE_SIGNING_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CODE_SIGNING_CLIENT_ID }}
       - name: Upload artifacts
+        # Upstream gates this on `inputs.upload-artifacts` (only `true` when
+        # the workflow is invoked via `workflow_call` from an external release
+        # workflow). The Linux fork wants the artifacts available on every
+        # push/PR — same behavior as `ci-linux.yml` for `.deb`/`.rpm`/
+        # `.AppImage` — so the fork removes the gate. The macOS run finds the
+        # `.zip` + `bundle-size.json`, the Windows run finds all five paths;
+        # `if-no-files-found: error` only fires when zero paths match.
         uses: actions/upload-artifact@v4
-        if: ${{ inputs.upload-artifacts }}
         with:
           name: ${{matrix.friendlyName}}-${{matrix.arch}}
           path: |
