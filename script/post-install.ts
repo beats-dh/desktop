@@ -82,15 +82,19 @@ findYarnVersion(path => {
   //                                licenseFromText — fixes prod license-dump
   //                                crash on @xml-tools/parser/LICENSES dir)
   //   - electron-installer-redhat+3.4.0.patch  (Linux RPM packaging)
-  result = spawnSync(
-    process.platform === 'win32' ? 'npx.cmd' : 'npx',
-    ['patch-package'],
-    options
-  )
+  //
+  // Invoked via the current Node binary against patch-package's CLI module
+  // directly. The earlier `npx patch-package` form failed on Windows CI
+  // because `spawn('npx.cmd', …)` without `shell: true` can't dispatch a
+  // `.cmd` shim, and the silent warning we used to log meant the missing
+  // patches only surfaced later as the legal-eagle EISDIR crash.
+  const patchPackageCli = require.resolve('patch-package/dist/index.js')
+  result = spawnSync(process.execPath, [patchPackageCli], options)
   if (result.status !== 0) {
-    console.warn(
-      `[post-install] patch-package exited with ${result.status} — patches may not be applied`
+    console.error(
+      `[post-install] patch-package exited with ${result.status} — refusing to continue with unpatched node_modules`
     )
+    process.exit(result.status || 1)
   }
 
   // Download per-platform format-tool binaries (shfmt, ruff) into
