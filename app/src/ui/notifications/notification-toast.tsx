@@ -27,7 +27,10 @@ export class NotificationToast extends React.Component<INotificationToastProps> 
     // additionally suppressed-on-keydown to avoid scrolling the page).
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
-      this.onActionClick()
+
+      if (!event.repeat) {
+        this.onActionClick()
+      }
     }
   }
 
