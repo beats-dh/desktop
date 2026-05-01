@@ -22,3 +22,4 @@ junit*.xml
 tslint-rules/
 playwright-videos/
 script/release_notes.txt
+/app/vendor/format-tools
