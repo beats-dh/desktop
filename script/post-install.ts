@@ -75,19 +75,26 @@ findYarnVersion(path => {
     spawnSync('git', ['config', 'core.hooksPath', '.githooks'], options)
   }
 
-  // Apply patches/*.patch via patch-package. Cross-platform (uses Node, no
-  // dependency on a system `patch` binary) and idempotent (`--reverse`-checks
-  // before applying). Currently covers:
-  //   - legal-eagle+0.16.0.patch  (skip dirs in readIfExists, guard nulls in
-  //                                licenseFromText — fixes prod license-dump
-  //                                crash on @xml-tools/parser/LICENSES dir)
-  //   - electron-installer-redhat+3.4.0.patch  (Linux RPM packaging)
+  // Apply patches via patch-package. Cross-platform (uses Node, no
+  // dependency on a system `patch` binary) and idempotent.
   //
-  // Invoked via the current Node binary against patch-package's CLI module
-  // directly. The earlier `npx patch-package` form failed on Windows CI
-  // because `spawn('npx.cmd', …)` without `shell: true` can't dispatch a
-  // `.cmd` shim, and the silent warning we used to log meant the missing
-  // patches only surfaced later as the legal-eagle EISDIR crash.
+  // Patches are split across two directories so platform-specific ones don't
+  // poison the rest:
+  //   - `patches/`        cross-platform; applied on every OS.
+  //                       legal-eagle+0.16.0.patch (skip dirs in readIfExists,
+  //                       guard nulls in licenseFromText — fixes prod
+  //                       license-dump crash on `@xml-tools/parser/LICENSES`).
+  //   - `patches-linux/`  Linux-only; the target packages are
+  //                       `optionalDependencies` that only resolve on Linux,
+  //                       and patch-package errors out on
+  //                       "patch file found for package not present" (exit 1)
+  //                       even when the user is on Windows/macOS where the
+  //                       package legitimately isn't installed.
+  //                       electron-installer-redhat+3.4.0.patch (RPM packaging).
+  //
+  // Invoked via the current Node binary against patch-package's CLI module —
+  // the earlier `spawn('npx.cmd', …)` form failed silently on Windows CI
+  // because `.cmd` shims don't run via direct CreateProcess.
   const patchPackageCli = require.resolve('patch-package/dist/index.js')
   result = spawnSync(process.execPath, [patchPackageCli], options)
   if (result.status !== 0) {
@@ -95,6 +102,19 @@ findYarnVersion(path => {
       `[post-install] patch-package exited with ${result.status} — refusing to continue with unpatched node_modules`
     )
     process.exit(result.status || 1)
+  }
+  if (process.platform === 'linux') {
+    result = spawnSync(
+      process.execPath,
+      [patchPackageCli, '--patch-dir', 'patches-linux'],
+      options
+    )
+    if (result.status !== 0) {
+      console.error(
+        `[post-install] patch-package (patches-linux) exited with ${result.status}`
+      )
+      process.exit(result.status || 1)
+    }
   }
 
   // Download per-platform format-tool binaries (shfmt, ruff) into
