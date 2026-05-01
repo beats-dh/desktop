@@ -64,18 +64,6 @@
         font-style: italic;
       }
     }
-
-    // Branch is purely behind upstream (no local commits to lose, just
-    // needs a pull). No tint — the existing styling stays neutral so the
-    // user's eye still reads the name normally — but a subtle down-arrow
-    // sits at the right edge to flag that there's something to pull. Mut-
-    // ually exclusive with `.unpushed` (the conditional logic in
-    // BranchListItem.render guarantees only one fires).
-    .behind-indicator {
-      margin-left: var(--spacing-half);
-      color: var(--text-secondary-color);
-      flex-shrink: 0;
-    }
   }
 }
 

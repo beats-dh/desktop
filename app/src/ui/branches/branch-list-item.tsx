@@ -175,10 +175,9 @@ export class BranchListItem extends React.Component<
    *   1. No upstream at all (`upstreamSha === undefined`) — every commit
    *      is unpushed by definition.
    *   2. Upstream exists and we've computed `ahead > 0`.
-   * When `behind > 0` but `ahead === 0` the branch is purely behind
-   * upstream — no local work to lose, just needs a pull. That case is
-   * handled by `isOnlyBehind()` and shows a subtle down-arrow icon
-   * without the tint.
+   * Branches that are purely behind upstream (no local work to lose,
+   * just need a pull) are intentionally NOT decorated — the row stays
+   * neutral so the user's eye doesn't get pulled by routine fetch lag.
    */
   private isUnpushed(): boolean {
     // Feature opt-in: callers without the ahead/behind plumbing get no
@@ -203,21 +202,6 @@ export class BranchListItem extends React.Component<
       return true
     }
     return aheadBehind !== undefined && aheadBehind.ahead > 0
-  }
-
-  private isOnlyBehind(): boolean {
-    // Same gate as isUnpushed: behind-indicator is meaningless for remote
-    // tracking branches, which represent the remote itself.
-    const { branch } = this.props
-    if (branch === undefined || branch.type !== BranchType.Local) {
-      return false
-    }
-    const { aheadBehind } = this.state
-    return (
-      aheadBehind !== undefined &&
-      aheadBehind.ahead === 0 &&
-      aheadBehind.behind > 0
-    )
   }
 
   private onMouseEnter = () => {
@@ -264,24 +248,17 @@ export class BranchListItem extends React.Component<
     const { authorDate, isCurrentBranch, name } = this.props
 
     const isUnpushed = this.isUnpushed()
-    const isOnlyBehind = this.isOnlyBehind()
 
     const icon = isCurrentBranch ? octicons.check : octicons.gitBranch
     const className = classNames('branches-list-item', {
       'drop-target': this.state.isDragInProgress,
       unpushed: isUnpushed,
-      'only-behind': !isUnpushed && isOnlyBehind,
     })
 
-    // Tooltip rule: surface push status whenever it's interesting (unpushed
-    // or behind), otherwise fall back to overflow-only behaviour for the
-    // branch name. Reuses the branch name as the visible tooltip body.
-    const nameTooltip = isUnpushed
-      ? `${name} — not pushed to remote`
-      : isOnlyBehind
-        ? `${name} — behind remote, pull to update`
-        : name
-    const onlyWhenOverflowed = !isUnpushed && !isOnlyBehind
+    // Tooltip rule: surface push status when the branch is unpushed,
+    // otherwise fall back to overflow-only behaviour for the branch name.
+    const nameTooltip = isUnpushed ? `${name} — not pushed to remote` : name
+    const onlyWhenOverflowed = !isUnpushed
 
     return (
       /**
@@ -316,9 +293,6 @@ export class BranchListItem extends React.Component<
               tooltip={!enableAccessibleListToolTips()}
             />
           ))}
-        {isOnlyBehind && (
-          <Octicon className="behind-indicator" symbol={octicons.arrowDown} />
-        )}
       </div>
     )
   }
