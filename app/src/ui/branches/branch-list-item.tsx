@@ -172,9 +172,15 @@ export class BranchListItem extends React.Component<
   /**
    * The branch needs the "you have something to publish" tint when there
    * are commits on local that aren't on the remote. Two cases:
-   *   1. No upstream at all (`upstreamSha === undefined`) — every commit
-   *      is unpushed by definition.
-   *   2. Upstream exists and we've computed `ahead > 0`.
+   *   1. No upstream at all (`branch.upstream === null`) — every commit
+   *      is unpushed by definition. Decided synchronously from the model
+   *      so first paint is correct (no flash).
+   *   2. Upstream exists AND we've already resolved `aheadBehind` AND
+   *      `ahead > 0`. While the upstream tip / ahead-behind subscription
+   *      is still loading we deliberately return `false`: pretending the
+   *      branch is unpushed during that window would paint the whole
+   *      list orange on every dropdown open and then snap back to normal,
+   *      which is exactly the flicker we want to avoid.
    * Branches that are purely behind upstream (no local work to lose,
    * just need a pull) are intentionally NOT decorated — the row stays
    * neutral so the user's eye doesn't get pulled by routine fetch lag.
@@ -183,7 +189,7 @@ export class BranchListItem extends React.Component<
     // Feature opt-in: callers without the ahead/behind plumbing get no
     // decoration, period. Avoids painting every dialog-picker entry as
     // "unpushed" just because we don't know better.
-    const { aheadBehindStore, repository, branch, upstreamSha } = this.props
+    const { aheadBehindStore, repository, branch } = this.props
     if (
       aheadBehindStore === undefined ||
       repository === undefined ||
@@ -197,10 +203,16 @@ export class BranchListItem extends React.Component<
     if (branch.type !== BranchType.Local) {
       return false
     }
-    const { aheadBehind } = this.state
-    if (upstreamSha === undefined) {
+    // Truly local branch (no upstream tracking ref configured). Synchronous
+    // signal straight from the model — decide on first render, no flash.
+    if (branch.upstream === null) {
       return true
     }
+    // Upstream exists. Only paint the warning once the ahead/behind
+    // subscription has actually delivered a result. Any other state
+    // (subscription pending, upstream sha not yet loaded) is treated as
+    // "unknown" → leave the row neutral.
+    const { aheadBehind } = this.state
     return aheadBehind !== undefined && aheadBehind.ahead > 0
   }
 
