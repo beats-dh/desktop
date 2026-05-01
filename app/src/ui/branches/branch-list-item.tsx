@@ -13,7 +13,7 @@ import { TooltippedContent } from '../lib/tooltipped-content'
 import { enableAccessibleListToolTips } from '../../lib/feature-flag'
 import { getPreferAbsoluteDates } from '../../models/formatting-preferences'
 import { formatDate } from '../../lib/format-date'
-import { Branch, IAheadBehind } from '../../models/branch'
+import { Branch, BranchType, IAheadBehind } from '../../models/branch'
 import { Repository } from '../../models/repository'
 import { AheadBehindStore } from '../../lib/stores/ahead-behind-store'
 import type { Disposable } from 'event-kit'
@@ -192,6 +192,12 @@ export class BranchListItem extends React.Component<
     ) {
       return false
     }
+    // Remote-tracking branches (`origin/foo`, `upstream/foo`) ARE the
+    // remote — they can't have "local modifications not on the web". The
+    // indicator only makes sense for local branches.
+    if (branch.type !== BranchType.Local) {
+      return false
+    }
     const { aheadBehind } = this.state
     if (upstreamSha === undefined) {
       return true
@@ -200,6 +206,12 @@ export class BranchListItem extends React.Component<
   }
 
   private isOnlyBehind(): boolean {
+    // Same gate as isUnpushed: behind-indicator is meaningless for remote
+    // tracking branches, which represent the remote itself.
+    const { branch } = this.props
+    if (branch === undefined || branch.type !== BranchType.Local) {
+      return false
+    }
     const { aheadBehind } = this.state
     return (
       aheadBehind !== undefined &&
