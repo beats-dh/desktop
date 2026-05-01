@@ -20,6 +20,17 @@ export class NotificationToast extends React.Component<INotificationToastProps> 
     this.props.onDismiss(this.props.toast.id)
   }
 
+  private onActionKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    // The toast body is `role="button" tabIndex={0}` — keyboard users land
+    // on it via Tab, so it has to behave like a real button. Mirror the
+    // browser default for `<button>` (Enter and Space activate, Space
+    // additionally suppressed-on-keydown to avoid scrolling the page).
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      this.onActionClick()
+    }
+  }
+
   private onCloseClick = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation()
     this.props.onDismiss(this.props.toast.id)
@@ -35,6 +46,7 @@ export class NotificationToast extends React.Component<INotificationToastProps> 
         <div
           className="notification-toast-body"
           onClick={this.onActionClick}
+          onKeyDown={this.onActionKeyDown}
           role="button"
           tabIndex={0}
         >
