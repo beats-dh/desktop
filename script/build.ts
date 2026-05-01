@@ -196,7 +196,10 @@ function packageApp() {
       new RegExp('/node_modules/electron($|/)'),
       new RegExp('/node_modules/electron-packager($|/)'),
       new RegExp('/\\.git($|/)'),
-      new RegExp('/node_modules/\\.bin($|/)'),
+      // `node_modules/.bin/` was previously excluded wholesale, but we now
+      // ship a few CLI binaries (clang-format, prettier) that the auto-format
+      // feature spawns at commit time. Those shims must reach the packaged
+      // app, so the ignore was relaxed.
     ],
     appCopyright: `Copyright © ${new Date().getFullYear()} GitHub, Inc.`,
 
@@ -326,6 +329,20 @@ function copyDependencies() {
 
   console.log('  Installing dependencies via yarn…')
   cp.execSync('yarn install', { cwd: outRoot, env: process.env })
+
+  // Format-tool binaries live under `app/vendor/format-tools/<plat>-<arch>/`
+  // (downloaded in `script/post-install.ts`). Copy them into out/ so
+  // electron-packager bundles them next to the rest of the app.
+  const formatToolsSource = path.resolve(projectRoot, 'app/vendor/format-tools')
+  const formatToolsDest = path.resolve(outRoot, 'vendor/format-tools')
+  if (existsSync(formatToolsSource)) {
+    console.log('  Copying format-tool binaries…')
+    rmSync(formatToolsDest, { recursive: true, force: true })
+    cpSync(formatToolsSource, formatToolsDest, {
+      recursive: true,
+      verbatimSymlinks: true,
+    })
+  }
 
   console.log('  Copying desktop-askpass-trampoline…')
   const trampolineSource = path.resolve(

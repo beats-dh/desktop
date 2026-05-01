@@ -368,6 +368,14 @@ export interface IAppState {
   readonly commitSpellcheckEnabled: boolean
 
   /**
+   * When enabled, GitHub Desktop runs the appropriate code formatter
+   * (Prettier, clang-format, stylua, …) on the staged files right before
+   * creating a commit. Respects the repo's own config files
+   * (.prettierrc, .clang-format, stylua.toml). Default: off.
+   */
+  readonly formatOnCommit: boolean
+
+  /**
    * Record of what logged in users have been checked to see if thank you is in
    * order for external contributions in latest release.
    */

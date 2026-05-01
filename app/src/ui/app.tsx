@@ -1592,6 +1592,7 @@ export class App extends React.Component<IAppProps, IAppState> {
             notificationsEnabled={this.state.notificationsEnabled}
             optOutOfUsageTracking={this.state.optOutOfUsageTracking}
             useExternalCredentialHelper={this.state.useExternalCredentialHelper}
+            formatOnCommit={this.state.formatOnCommit}
             repository={repository}
             onDismissed={onPopupDismissedFn}
             selectedShell={this.state.selectedShell}

@@ -2,10 +2,11 @@
 
 import * as Path from 'path'
 import { spawnSync, SpawnSyncOptions } from 'child_process'
-import { existsSync, readdirSync } from 'fs'
+import { existsSync } from 'fs'
 
 import glob from 'glob'
 import { forceUnwrap } from '../app/src/lib/fatal-error'
+import { downloadFormatTools } from './format-tools-download'
 
 const root = Path.dirname(__dirname)
 
@@ -67,6 +68,63 @@ findYarnVersion(path => {
     process.exit(result.status || 1)
   }
 
+  // Point Git at the in-tree hooks directory so the pre-commit auto-formatter
+  // is active for everyone who runs `yarn install`. Skipped outside a Git
+  // checkout (e.g., source tarball) so the install still succeeds there.
+  if (existsSync(Path.join(root, '.git'))) {
+    spawnSync('git', ['config', 'core.hooksPath', '.githooks'], options)
+  }
+
+  // Apply patches via patch-package. Cross-platform (uses Node, no
+  // dependency on a system `patch` binary) and idempotent.
+  //
+  // Patches are split across two directories so platform-specific ones don't
+  // poison the rest:
+  //   - `patches/`        cross-platform; applied on every OS.
+  //                       legal-eagle+0.16.0.patch (skip dirs in readIfExists,
+  //                       guard nulls in licenseFromText — fixes prod
+  //                       license-dump crash on `@xml-tools/parser/LICENSES`).
+  //   - `patches-linux/`  Linux-only; the target packages are
+  //                       `optionalDependencies` that only resolve on Linux,
+  //                       and patch-package errors out on
+  //                       "patch file found for package not present" (exit 1)
+  //                       even when the user is on Windows/macOS where the
+  //                       package legitimately isn't installed.
+  //                       electron-installer-redhat+3.4.0.patch (RPM packaging).
+  //
+  // Invoked via the current Node binary against patch-package's CLI module —
+  // the earlier `spawn('npx.cmd', …)` form failed silently on Windows CI
+  // because `.cmd` shims don't run via direct CreateProcess.
+  const patchPackageCli = require.resolve('patch-package/dist/index.js')
+  result = spawnSync(process.execPath, [patchPackageCli], options)
+  if (result.status !== 0) {
+    console.error(
+      `[post-install] patch-package exited with ${result.status} — refusing to continue with unpatched node_modules`
+    )
+    process.exit(result.status || 1)
+  }
+  if (process.platform === 'linux') {
+    result = spawnSync(
+      process.execPath,
+      [patchPackageCli, '--patch-dir', 'patches-linux'],
+      options
+    )
+    if (result.status !== 0) {
+      console.error(
+        `[post-install] patch-package (patches-linux) exited with ${result.status}`
+      )
+      process.exit(result.status || 1)
+    }
+  }
+
+  // Download per-platform format-tool binaries (shfmt, ruff) into
+  // `app/vendor/format-tools/<plat>-<arch>/`. Bundled by `script/build.ts`
+  // into the packaged app. Network failure here is non-fatal — the
+  // auto-format feature degrades to "skipped" for those tools at runtime.
+  downloadFormatTools(root).catch(err => {
+    console.warn('[post-install] format-tools download failed:', err.message)
+  })
+
   if (!isOffline()) {
     result = spawnSync(
       'git',
@@ -107,30 +165,7 @@ findYarnVersion(path => {
     }
   }
 
-  // Linux-specific: apply patches from the patches/ directory
-  if (process.platform === 'linux') {
-    const patchesDir = Path.join(root, 'patches')
-    if (existsSync(patchesDir)) {
-      const patches = readdirSync(patchesDir).filter(f => f.endsWith('.patch'))
-      for (const patch of patches) {
-        const patchPath = Path.join(patchesDir, patch)
-        result = spawnSync(
-          'patch',
-          ['-p1', '--forward', '--force', '--input', patchPath],
-          {
-            ...options,
-            cwd: root,
-          }
-        )
-        if (result.status !== 0 && result.status !== 1) {
-          // status 1 means already applied (idempotent), only fail on other errors
-          console.warn(
-            `Warning: patch ${patch} may have failed (status ${result.status})`
-          )
-        }
-      }
-    }
-  }
+  // (Patches in patches/ are applied above by patch-package, cross-platform.)
 
   // Capture output here so CI failures include the Playwright-specific error.
   result = spawnSync(
@@ -157,3 +192,4 @@ findYarnVersion(path => {
     )
   }
 })
+
