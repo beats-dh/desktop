@@ -77,6 +77,16 @@ interface IBranchListItemState {
    * `undefined` when the branch has no upstream OR while the AheadBehind
    * subscription is still in flight. */
   readonly aheadBehind?: IAheadBehind
+
+  /**
+   * Identity key for the (local tip, upstream tip) pair currently reflected
+   * in `aheadBehind`. Used by `getDerivedStateFromProps` to detect when the
+   * comparison endpoints have shifted and the cached value (if any) needs
+   * to be re-read from the store. Without this we'd either keep stale data
+   * across prop changes or lose the synchronous cache hit that prevents
+   * the orange-paint flash.
+   */
+  readonly aheadBehindKey: string
 }
 
 /** The branch component. */
@@ -84,11 +94,78 @@ export class BranchListItem extends React.Component<
   IBranchListItemProps,
   IBranchListItemState
 > {
+  /**
+   * Pre-render hook that keeps `aheadBehind` in sync with the current
+   * comparison endpoints. The flash we're avoiding here happens on the
+   * second mount cycle: a parent prop change (typically `upstreamSha`
+   * going from undefined → real SHA after the remote-tip fetch resolves)
+   * arrives, React renders with the OLD `aheadBehind` value, and only
+   * then `componentDidUpdate` fires and re-subscribes. Reading the cache
+   * here lets us update the state ALONGSIDE the prop change, in the same
+   * render pass, so a cached hit is reflected immediately instead of one
+   * frame later.
+   *
+   * Returns `null` when nothing changed, which keeps React's bailout path
+   * intact for the common case (drag state changes, parent re-renders
+   * without endpoint changes, etc.).
+   */
+  public static getDerivedStateFromProps(
+    props: IBranchListItemProps,
+    state: IBranchListItemState
+  ): Partial<IBranchListItemState> | null {
+    const key = BranchListItem.computeAheadBehindKey(props)
+    if (key === state.aheadBehindKey) {
+      return null
+    }
+    return {
+      aheadBehind: BranchListItem.tryReadCachedAheadBehind(props),
+      aheadBehindKey: key,
+    }
+  }
+
+  private static tryReadCachedAheadBehind(
+    props: IBranchListItemProps
+  ): IAheadBehind | undefined {
+    const { aheadBehindStore, repository, branch, upstreamSha } = props
+    if (
+      aheadBehindStore === undefined ||
+      repository === undefined ||
+      branch === undefined ||
+      upstreamSha === undefined
+    ) {
+      return undefined
+    }
+    return aheadBehindStore.tryGetAheadBehind(
+      repository,
+      branch.tip.sha,
+      upstreamSha
+    )
+  }
+
+  /**
+   * The pair of SHAs that defines what `aheadBehind` is currently caching.
+   * When this key changes we know the comparison endpoints shifted and the
+   * cached value (if any) needs to be re-read.
+   */
+  private static computeAheadBehindKey(props: IBranchListItemProps): string {
+    return `${props.repository?.path ?? ''}|${props.branch?.tip.sha ?? ''}|${
+      props.upstreamSha ?? ''
+    }`
+  }
+
   private aheadBehindSubscription: Disposable | null = null
 
   public constructor(props: IBranchListItemProps) {
     super(props)
-    this.state = { isDragInProgress: false }
+    // Seed state synchronously from the AheadBehindStore cache. Anything
+    // we can resolve here saves us a paint: without it the first render
+    // is always `aheadBehind: undefined` → row paints neutral → cache hit
+    // arrives in `componentDidMount` → row repaints orange.
+    this.state = {
+      isDragInProgress: false,
+      aheadBehind: BranchListItem.tryReadCachedAheadBehind(props),
+      aheadBehindKey: BranchListItem.computeAheadBehindKey(props),
+    }
   }
 
   public componentDidMount() {
@@ -122,38 +199,30 @@ export class BranchListItem extends React.Component<
 
     const { aheadBehindStore, repository, branch, upstreamSha } = this.props
 
-    // Caller didn't opt into the push-status indicator (dialog pickers,
-    // branch-select widget). Skip the subscription entirely — the row
-    // renders as a plain label.
+    // Cases where there's nothing async to compute. State is already
+    // correctly seeded by `getDerivedStateFromProps` (cache lookup or
+    // `undefined`), so we just need to skip the subscription.
     if (
       aheadBehindStore === undefined ||
       repository === undefined ||
-      branch === undefined
+      branch === undefined ||
+      upstreamSha === undefined
     ) {
-      this.setState({ aheadBehind: undefined })
       return
     }
 
-    // No upstream → no ahead/behind to compute. Visual state is driven by
-    // `isUnpushed()` directly.
-    if (upstreamSha === undefined) {
-      this.setState({ aheadBehind: undefined })
+    // Cache hit was already reflected synchronously in state via
+    // `getDerivedStateFromProps`. No subscription needed — the store
+    // would just hand us back the same value, and the (sha, sha) pair
+    // is immutable so the cached value can't go stale for this key.
+    if (this.state.aheadBehind !== undefined) {
       return
     }
 
-    // Try the cache first so we paint correctly on first render when the
-    // user re-opens the dropdown for a repo we've already computed.
-    const cached = aheadBehindStore.tryGetAheadBehind(
-      repository,
-      branch.tip.sha,
-      upstreamSha
-    )
-    if (cached !== undefined) {
-      this.setState({ aheadBehind: cached })
-      return
-    }
-
-    this.setState({ aheadBehind: undefined })
+    // Cache miss → kick off the async computation. The callback fires
+    // when the worker resolves, at which point we update state and
+    // trigger the orange repaint for branches that actually have local
+    // commits.
     this.aheadBehindSubscription = aheadBehindStore.getAheadBehind(
       repository,
       branch.tip.sha,
