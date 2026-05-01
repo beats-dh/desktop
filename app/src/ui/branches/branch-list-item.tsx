@@ -21,6 +21,15 @@ interface IBranchListItemProps {
   /** Specifies whether this item is currently selected */
   readonly isCurrentBranch: boolean
 
+  /**
+   * `true` when the branch has no upstream tracking ref — i.e. it was
+   * created locally and never pushed to a remote, so every commit on it
+   * is unpushed. The list item picks up an `unpushed` modifier class to
+   * surface that state visually (color + tooltip), prompting the user to
+   * push before they lose the work.
+   */
+  readonly isUnpushed: boolean
+
   /** The characters in the branch name to highlight */
   readonly matches: IMatches
 
@@ -93,12 +102,18 @@ export class BranchListItem extends React.Component<
   }
 
   public render() {
-    const { authorDate, isCurrentBranch, name } = this.props
+    const { authorDate, isCurrentBranch, isUnpushed, name } = this.props
 
     const icon = isCurrentBranch ? octicons.check : octicons.gitBranch
     const className = classNames('branches-list-item', {
       'drop-target': this.state.isDragInProgress,
+      unpushed: isUnpushed,
     })
+    // Hover/focus tooltip on the row's name. We piggy-back on the existing
+    // overflow tooltip when the branch has an upstream; for unpushed
+    // branches we always surface the warning, even on short names where
+    // overflow isn't triggering.
+    const nameTooltip = isUnpushed ? `${name} — not pushed to remote` : name
 
     return (
       /**
@@ -115,8 +130,8 @@ export class BranchListItem extends React.Component<
         <Octicon className="icon" symbol={icon} />
         <TooltippedContent
           className="name"
-          tooltip={name}
-          onlyWhenOverflowed={true}
+          tooltip={nameTooltip}
+          onlyWhenOverflowed={!isUnpushed}
           tagName="div"
           disabled={enableAccessibleListToolTips()}
         >

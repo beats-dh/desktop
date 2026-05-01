@@ -18,10 +18,18 @@ export function renderDefaultBranch(
 ): JSX.Element {
   const branch = item.branch
   const currentBranchName = currentBranch ? currentBranch.name : null
+  // A local branch with no upstream tracking ref hasn't been pushed yet —
+  // every commit on it is unpushed. The list item gets a colored modifier
+  // class (see _branches.scss .branches-list-item.unpushed). Only applies
+  // to local branches; remote-tracking entries (`origin/foo`) always have
+  // upstream === null in this model but are filtered out before reaching
+  // this renderer, so the check is safe here.
+  const isUnpushed = branch.upstream === null
   return (
     <BranchListItem
       name={branch.name}
       isCurrentBranch={branch.name === currentBranchName}
+      isUnpushed={isUnpushed}
       authorDate={authorDate}
       matches={matches}
       onDropOntoBranch={onDropOntoBranch}

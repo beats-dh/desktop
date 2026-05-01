@@ -46,6 +46,22 @@
       height: 30px;
       flex-grow: revert;
     }
+
+    // Branches without an upstream tracking ref — i.e. created locally and
+    // never pushed. Tint the icon and the name to nudge the user toward
+    // pushing them before the work is lost. Color is reused from the
+    // "additions/new" semantic palette (var(--color-new), green-ish) so it
+    // reads as "you have something to publish" rather than "warning".
+    &.unpushed {
+      .icon {
+        color: var(--color-new);
+      }
+
+      .name {
+        color: var(--color-new);
+        font-style: italic;
+      }
+    }
   }
 }
 
