@@ -21,9 +21,8 @@ function getArchitecture() {
   }
 }
 
-export async function packageElectronBuilder(): Promise<Array<string>> {
+async function runElectronBuilder(): Promise<void> {
   const distPath = getDistPath()
-  const distRoot = getDistRoot()
 
   const electronBuilder = path.resolve(
     __dirname,
@@ -33,7 +32,7 @@ export async function packageElectronBuilder(): Promise<Array<string>> {
     'electron-builder'
   )
 
-  const configPath = path.resolve(__dirname, 'electron-builder-linux.yml')
+  const configPath = path.resolve(__dirname, 'electron-builder.yml')
 
   const args = [
     'build',
@@ -44,12 +43,22 @@ export async function packageElectronBuilder(): Promise<Array<string>> {
     configPath,
   ]
 
-  const { error } = cp.spawnSync(electronBuilder, args, { stdio: 'inherit' })
+  const { error, status } = cp.spawnSync(electronBuilder, args, {
+    stdio: 'inherit',
+  })
 
   if (error != null) {
-    return Promise.reject(error)
+    throw error
   }
+  if (status !== 0) {
+    throw new Error(`electron-builder exited with status ${status}`)
+  }
+}
 
+export async function packageElectronBuilder(): Promise<Array<string>> {
+  await runElectronBuilder()
+
+  const distRoot = getDistRoot()
   const appImageInstaller = `${distRoot}/GitHubDesktop-linux-*.AppImage`
 
   const files = await globPromise(appImageInstaller)
@@ -61,7 +70,27 @@ export async function packageElectronBuilder(): Promise<Array<string>> {
     )
   }
 
-  const appImageInstallerPath = files[0]
+  return [files[0]]
+}
 
-  return Promise.resolve([appImageInstallerPath])
+// Windows packaging via electron-builder produces:
+//   - `GitHubDesktopSetup-<arch>-<version>.exe`  (NSIS installer)
+//   - `latest.yml`                                (electron-updater manifest)
+// plus a few helper files (block maps, etc.) we don't need to surface.
+export async function packageWindowsElectronBuilder(): Promise<Array<string>> {
+  await runElectronBuilder()
+
+  const distRoot = getDistRoot()
+  const installerGlob = `${distRoot}/GitHubDesktopSetup-*.exe`
+  const manifestGlob = `${distRoot}/latest*.yml`
+
+  const installers = await globPromise(installerGlob)
+  if (installers.length === 0) {
+    return Promise.reject(
+      `No NSIS installer found at '${installerGlob}' after electron-builder run.`
+    )
+  }
+  const manifests = await globPromise(manifestGlob)
+
+  return [...installers, ...manifests]
 }

@@ -15,6 +15,11 @@ export const externals = [
   'prettier',
   '@prettier/plugin-xml',
   '@johnnymorganz/stylua',
+  // electron-updater ships its own native deps and reads `app-update.yml`
+  // shipped alongside the bundle at packaging time. Bundling it via webpack
+  // strips that resolution path; keep it external so node loads it from
+  // out/node_modules at runtime.
+  'electron-updater',
 ]
 
 const outputDir = 'out'

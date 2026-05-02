@@ -147,19 +147,17 @@ jobs:
       - name: Upload artifacts
         # Upstream gates this on `inputs.upload-artifacts` (only `true` when
         # the workflow is invoked via `workflow_call` from an external release
-        # workflow). The Linux fork wants the artifacts available on every
-        # push/PR — same behavior as `ci-linux.yml` for `.deb`/`.rpm`/
-        # `.AppImage` — so the fork removes the gate. The macOS run finds the
-        # `.zip` + `bundle-size.json`, the Windows run finds all five paths;
-        # `if-no-files-found: error` only fires when zero paths match.
+        # workflow). The fork wants the artifacts available on every push/PR
+        # so the gate is removed. macOS produces a `.zip` per arch (now built
+        # by electron-builder), Windows produces an NSIS `.exe` plus the
+        # `latest.yml` manifest that `electron-updater` reads.
         uses: actions/upload-artifact@v4
         with:
           name: ${{matrix.friendlyName}}-${{matrix.arch}}
           path: |
-            dist/GitHub Desktop-${{matrix.arch}}.zip
-            dist/GitHubDesktop-*.nupkg
-            dist/GitHubDesktopSetup-${{matrix.arch}}.exe
-            dist/GitHubDesktopSetup-${{matrix.arch}}.msi
+            dist/GitHubDesktop-mac-${{matrix.arch}}-*.zip
+            dist/GitHubDesktopSetup-${{matrix.arch}}-*.exe
+            dist/latest*.yml
             dist/bundle-size.json
           if-no-files-found: error
   e2e-smoke:

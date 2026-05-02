@@ -3,9 +3,28 @@ import {
   app,
   dialog,
   BrowserWindow,
-  autoUpdater,
+  autoUpdater as electronAutoUpdater,
   nativeTheme,
 } from 'electron'
+// On Windows we use `electron-updater`'s NSIS-aware updater because the
+// native `electron.autoUpdater` only supports Squirrel.Windows, and its
+// feed format (`<feedURL>/RELEASES`) is not what update.electronjs.org
+// serves. macOS keeps using the native autoUpdater + update.electronjs.org
+// — Squirrel.Mac works fine there. Both expose the same event names and
+// methods we care about (`on`, `setFeedURL`, `checkForUpdates`,
+// `quitAndInstall`), so we use a minimal structural type that fits both.
+import { autoUpdater as nsisAutoUpdater } from 'electron-updater'
+
+type CommonUpdater = {
+  on(event: string, listener: (...args: any[]) => void): unknown
+  removeAllListeners(): unknown
+  setFeedURL(options: any): void
+  checkForUpdates(): void | Promise<unknown>
+  quitAndInstall(): void
+}
+
+const autoUpdater: CommonUpdater =
+  process.platform === 'win32' ? nsisAutoUpdater : electronAutoUpdater
 import { shell } from '../lib/app-shell'
 import { Emitter, Disposable } from 'event-kit'
 import { join } from 'path'
@@ -453,7 +472,19 @@ export class AppWindow {
 
   public async checkForUpdates(url: string) {
     try {
-      autoUpdater.setFeedURL({ url: await trySetUpdaterGuid(url) })
+      if (process.platform === 'win32') {
+        // electron-updater reads `app-update.yml` (shipped by electron-
+        // builder when `publish` is configured), but we set the provider
+        // explicitly so the YAML isn't a hard requirement and the source
+        // of truth stays in code.
+        autoUpdater.setFeedURL({
+          provider: 'github',
+          owner: 'beats-dh',
+          repo: 'desktop',
+        })
+      } else {
+        autoUpdater.setFeedURL({ url: await trySetUpdaterGuid(url) })
+      }
       autoUpdater.checkForUpdates()
     } catch (e) {
       return e

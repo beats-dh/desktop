@@ -40,6 +40,7 @@
     "dexie": "^3.2.3",
     "dompurify": "^3.4.0",
     "dugite": "^3.2.2",
+    "electron-updater": "^6.3.9",
     "electron-window-state": "^5.0.3",
     "event-kit": "^2.0.0",
     "focus-trap-react": "^8.1.0",
