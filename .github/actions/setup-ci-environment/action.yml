@@ -31,20 +31,37 @@ runs:
       shell: bash
       run: choco install ffmpeg --yes --no-progress
 
-    # Pin Electron's binary cache to a stable path under the workspace so
-    # actions/cache can find it on every OS. Without this `electron-packager`
-    # re-downloads ~150 MB per matrix job.
-    - name: Configure Electron cache directory
+    # `electron-packager` uses `@electron/get`, which has no env-var hook —
+    # it always falls back to `env-paths('electron').cache` if no explicit
+    # `cacheRoot` is passed. The `electron` package's post-install does the
+    # same when `electron_config_cache` is unset. So we cache that default
+    # path directly: no code change, covers both consumers.
+    #
+    # `ELECTRON_CACHE` (the var commonly cited online) is not read by either
+    # path in current versions; setting it is a no-op.
+    - name: Resolve Electron cache directory
       shell: bash
       run: |
-        cache_dir="$RUNNER_TEMP/electron-cache"
+        case "$RUNNER_OS" in
+          Linux)
+            cache_dir="$HOME/.cache/electron"
+            ;;
+          macOS)
+            cache_dir="$HOME/Library/Caches/electron"
+            ;;
+          Windows)
+            # `$LOCALAPPDATA` on Windows runners is `C:\Users\runneradmin\
+            # AppData\Local`; Git Bash exposes it as a regular env var.
+            cache_dir="$LOCALAPPDATA/electron/Cache"
+            ;;
+        esac
         mkdir -p "$cache_dir"
-        echo "ELECTRON_CACHE=$cache_dir" >> "$GITHUB_ENV"
+        echo "ELECTRON_DEFAULT_CACHE=$cache_dir" >> "$GITHUB_ENV"
 
     - name: Restore Electron binary cache
       uses: actions/cache@v4
       with:
-        path: ${{ env.ELECTRON_CACHE }}
+        path: ${{ env.ELECTRON_DEFAULT_CACHE }}
         key:
           electron-${{ runner.os }}-${{ inputs.arch }}-${{
           hashFiles('app/package.json', 'app/yarn.lock') }}
