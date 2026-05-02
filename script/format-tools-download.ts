@@ -35,7 +35,7 @@ import { pipeline } from 'stream/promises'
 const SHFMT_VERSION = '3.11.0'
 const RUFF_VERSION = '0.7.4'
 
-interface BinarySpec {
+type BinarySpec = {
   /** URL of the asset to download. */
   readonly url: string
   /**
