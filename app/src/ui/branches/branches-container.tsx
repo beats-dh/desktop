@@ -6,6 +6,7 @@ import {
   isRepositoryWithGitHubRepository,
 } from '../../models/repository'
 import { Branch } from '../../models/branch'
+import { AheadBehindStore } from '../../lib/stores/ahead-behind-store'
 import { BranchesTab } from '../../models/branches-tab'
 import { PopupType } from '../../models/popup'
 
@@ -42,8 +43,21 @@ import classNames from 'classnames'
 interface IBranchesContainerProps {
   readonly dispatcher: Dispatcher
   readonly repository: Repository
+  /**
+   * Ahead-behind cache shared across the app. The branches list uses it to
+   * mark branches whose local tip is ahead of their tracked upstream — i.e.
+   * have unpushed commits — without re-running git for every list render.
+   */
+  readonly aheadBehindStore: AheadBehindStore
   readonly selectedTab: BranchesTab
   readonly allBranches: ReadonlyArray<Branch>
+  /**
+   * Tip SHA of every local branch's tracked upstream, keyed by the local
+   * branch name. Pre-computed in the git-store from the same payload that
+   * builds `allBranches`, so the unpushed indicator can paint correctly
+   * on the very first render — no async fetch needed at this layer.
+   */
+  readonly upstreamShaByLocalBranchName: ReadonlyMap<string, string>
   readonly defaultBranch: Branch | null
   readonly currentBranch: Branch | null
   readonly recentBranches: ReadonlyArray<Branch>
@@ -228,7 +242,10 @@ export class BranchesContainer extends React.Component<
       this.props.currentBranch,
       authorDate,
       this.onDropOntoBranch,
-      this.onDropOntoCurrentBranch
+      this.onDropOntoCurrentBranch,
+      this.props.repository,
+      this.props.aheadBehindStore,
+      this.props.upstreamShaByLocalBranchName
     )
   }
 

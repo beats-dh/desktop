@@ -16,6 +16,7 @@ import {
   isRebaseConflictState,
 } from '../../lib/app-state'
 import { BranchesContainer, PullRequestBadge } from '../branches'
+import { AheadBehindStore } from '../../lib/stores/ahead-behind-store'
 import { assertNever } from '../../lib/fatal-error'
 import { BranchesTab } from '../../models/branches-tab'
 import { PullRequest } from '../../models/pull-request'
@@ -39,6 +40,13 @@ interface IBranchDropdownProps {
 
   /** The current repository state as derived from AppState */
   readonly repositoryState: IRepositoryState
+
+  /**
+   * Lazily computes ahead/behind for arbitrary refs in this repo. The
+   * branch dropdown forwards this to each branch row so it can highlight
+   * branches that have local commits not on the remote.
+   */
+  readonly aheadBehindStore: AheadBehindStore
 
   /** The width of the resizable branch dropdown button, as derived from AppState. */
   readonly branchDropdownWidth: IConstrainedValue
@@ -101,11 +109,15 @@ export class BranchDropdown extends React.Component<IBranchDropdownProps> {
     return (
       <BranchesContainer
         allBranches={branchesState.allBranches}
+        upstreamShaByLocalBranchName={
+          branchesState.upstreamShaByLocalBranchName
+        }
         recentBranches={branchesState.recentBranches}
         currentBranch={currentBranch}
         defaultBranch={branchesState.defaultBranch}
         dispatcher={this.props.dispatcher}
         repository={this.props.repository}
+        aheadBehindStore={this.props.aheadBehindStore}
         selectedTab={this.props.selectedTab}
         pullRequests={this.props.pullRequests}
         currentPullRequest={this.props.currentPullRequest}

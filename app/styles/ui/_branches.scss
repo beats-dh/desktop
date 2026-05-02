@@ -46,6 +46,36 @@
       height: 30px;
       flex-grow: revert;
     }
+
+    // Branch has commits that aren't on the remote yet — either there's
+    // no upstream tracking ref at all (purely local branch) or upstream
+    // exists and we're ahead of it. Paint the icon and the name in the
+    // toolbar's existing "warning" palette (orange) — same variable the
+    // app already uses for warning text in other toolbar dropdowns, so
+    // the user reads it instinctively as "attention, something pending"
+    // rather than "success" (which a green tint would suggest).
+    &.unpushed {
+      .icon {
+        color: var(--toolbar-dropdown-text-warning-color);
+      }
+
+      .name {
+        color: var(--toolbar-dropdown-text-warning-color);
+        font-style: italic;
+      }
+    }
+  }
+
+  // When an unpushed branch is also the selected row, fall back to the
+  // list's selected-text color so the orange warning tint doesn't fight
+  // the selection background (which would drop contrast, especially in
+  // dark theme). The italic name + the still-orange icon-on-hover trail
+  // continue to mark the row as unpushed.
+  .list-item.selected .branches-list-item.unpushed {
+    .icon,
+    .name {
+      color: var(--box-selected-text-color);
+    }
   }
 }
 

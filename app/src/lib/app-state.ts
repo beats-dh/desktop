@@ -724,6 +724,15 @@ export interface IBranchesState {
   readonly allBranches: ReadonlyArray<Branch>
 
   /**
+   * Tip SHA of every local branch's tracked upstream, keyed by the local
+   * branch name. Populated during the same git-store load that computes
+   * `allBranches`, so consumers (the branch dropdown's unpushed
+   * indicator) never need a second async fetch and can render the right
+   * decoration on the first paint.
+   */
+  readonly upstreamShaByLocalBranchName: ReadonlyMap<string, string>
+
+  /**
    * A list of zero to a few (at time of writing 5 but check loadRecentBranches
    * in git-store for definitive answer) branches that have been checked out
    * recently. This list is compiled by reading the reflog and tracking branch
