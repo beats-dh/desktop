@@ -159,10 +159,17 @@ jobs:
           # `update.electronjs.org` rejects `release-3.5.9` tags because
           # `semver.clean()` only accepts a leading `v` (or no prefix). The
           # GitHub Release we publish therefore lives on a sibling `vX.Y.Z`
-          # tag that the action creates at the same SHA. Respin suffixes
-          # (`-2`, `-3`, …) collapse onto the same `v` tag so the update
-          # server always sees one canonical Release per upstream version.
-          upstreamVersion="${tagNameWithoutPrefix%%-*}"
+          # tag that the action creates at the same SHA.
+          #
+          # Only the numeric respin suffix (`-2`, `-3`, …) collapses onto
+          # the canonical v-tag — pre-release identifiers like `-test1` or
+          # `-beta1` keep their suffix so they don't collide with the
+          # stable Release for the same upstream version.
+          if [[ "$tagNameWithoutPrefix" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-[0-9]+$ ]]; then
+            upstreamVersion="${BASH_REMATCH[1]}"
+          else
+            upstreamVersion="$tagNameWithoutPrefix"
+          fi
           echo "UPDATE_TAG=v${upstreamVersion}" >> $GITHUB_ENV
 
       - name: Generate release notes
