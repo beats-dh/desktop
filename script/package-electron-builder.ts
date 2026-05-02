@@ -24,12 +24,16 @@ function getArchitecture() {
 async function runElectronBuilder(): Promise<void> {
   const distPath = getDistPath()
 
+  // On Windows the `.bin/electron-builder` shim is a `.cmd` batch file;
+  // `spawnSync` won't auto-append the extension, so resolve directly.
+  const isWindows = process.platform === 'win32'
+  const binName = isWindows ? 'electron-builder.cmd' : 'electron-builder'
   const electronBuilder = path.resolve(
     __dirname,
     '..',
     'node_modules',
     '.bin',
-    'electron-builder'
+    binName
   )
 
   const configPath = path.resolve(__dirname, 'electron-builder.yml')
@@ -41,10 +45,19 @@ async function runElectronBuilder(): Promise<void> {
     getArchitecture(),
     '--config',
     configPath,
+    // The `publish:` block in electron-builder.yml tells the GitHub
+    // provider where to look at runtime, but we don't want electron-
+    // builder to upload artefacts itself — the `publish` job in
+    // ci-linux.yml owns that. Without `--publish never` electron-builder
+    // detects CI, decides to upload, and fails on missing `GH_TOKEN`.
+    '--publish',
+    'never',
   ]
 
   const { error, status } = cp.spawnSync(electronBuilder, args, {
     stdio: 'inherit',
+    // `.cmd` shims need a shell on Windows; harmless elsewhere.
+    shell: isWindows,
   })
 
   if (error != null) {
