@@ -100,10 +100,16 @@ jobs:
           node-version: 22.22.2
           cache: yarn
 
+      # `docker/build-push-action@v6` uploads `*.dockerbuild` build-record
+      # artifacts as a side-effect (for the GHA build summary UI). They're
+      # not part of the release; filter to just the packaged-output
+      # artifacts so a transient failure on one of those metadata blobs
+      # doesn't kill the publish job.
       - name: Download Linux artifacts
         uses: actions/download-artifact@v4
         with:
           path: './artifacts'
+          pattern: ubuntu-*-artifacts
 
       - name: Wait for CI workflow (Windows/macOS) and download its artifacts
         env:
@@ -150,6 +156,21 @@ jobs:
           echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_ENV
           tagNameWithoutPrefix="${RELEASE_TAG:8}"
           echo "RELEASE_TAG_WITHOUT_PREFIX=${tagNameWithoutPrefix}" >> $GITHUB_ENV
+          # `update.electronjs.org` rejects `release-3.5.9` tags because
+          # `semver.clean()` only accepts a leading `v` (or no prefix). The
+          # GitHub Release we publish therefore lives on a sibling `vX.Y.Z`
+          # tag that the action creates at the same SHA.
+          #
+          # Only the numeric respin suffix (`-2`, `-3`, …) collapses onto
+          # the canonical v-tag — pre-release identifiers like `-test1` or
+          # `-beta1` keep their suffix so they don't collide with the
+          # stable Release for the same upstream version.
+          if [[ "$tagNameWithoutPrefix" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-[0-9]+$ ]]; then
+            upstreamVersion="${BASH_REMATCH[1]}"
+          else
+            upstreamVersion="$tagNameWithoutPrefix"
+          fi
+          echo "UPDATE_TAG=v${upstreamVersion}" >> $GITHUB_ENV
 
       - name: Generate release notes
         run: |
@@ -166,9 +187,29 @@ jobs:
           cat ${RELEASE_NOTES_FILE}
           echo "---"
 
+      # Respin support: if a `vX.Y.Z` Release already exists (from a previous
+      # respin of the same upstream version), drop it before creating the
+      # new one. `gh release delete` with `--cleanup-tag` also removes the
+      # git tag so action-gh-release can recreate it cleanly.
+      - name: Replace existing v-tag Release if any
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$UPDATE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Existing Release for $UPDATE_TAG found — replacing it."
+            gh release delete "$UPDATE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --cleanup-tag \
+              --yes
+          fi
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          # Tag the Release on `vX.Y.Z` (clean semver) so update.electronjs
+          # .org recognises it. The `release-X.Y.Z[-N]` git tag that
+          # triggered this workflow stays around as a CI artefact.
+          tag_name: ${{ env.UPDATE_TAG }}
           name: GitHub Desktop ${{ env.RELEASE_TAG_WITHOUT_PREFIX }}
           body_path: script/release_notes.txt
           files: |

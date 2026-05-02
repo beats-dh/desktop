@@ -145,8 +145,11 @@ export class About extends React.Component<IAboutProps> {
     if (__LINUX__) {
       return (
         <p>
-          Please visit the GitHub Desktop for Linux release page for
-          Linux-specific release notes and to download the latest version.
+          Please visit the{' '}
+          <LinkButton uri="https://github.com/beats-dh/desktop/releases">
+            releases page
+          </LinkButton>{' '}
+          for release notes and to download the latest version.
         </p>
       )
     }
