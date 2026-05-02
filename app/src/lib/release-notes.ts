@@ -89,30 +89,82 @@ export function getReleaseSummary(
   }
 }
 
+type GitHubRelease = {
+  readonly name: string | null
+  readonly tag_name: string
+  readonly body: string | null
+  readonly published_at: string | null
+  readonly draft: boolean
+  readonly prerelease: boolean
+}
+
+// Generated bodies look like:
+//
+//   ## Fixed
+//    - Foo - https://github.com/desktop/desktop/issues/123. Thanks @user!
+//
+// We invert that back into the `[Type] message` shape that `parseEntry` in
+// this file already knows how to render. Markdown outside of recognised
+// `## <Type>` sections is ignored.
+function parseReleaseBodyToNotes(body: string): ReadonlyArray<string> {
+  if (body.length === 0) {
+    return []
+  }
+  const sectionRe = /^##\s+(\w+)\s*$/gm
+  const headings = Array.from(body.matchAll(sectionRe))
+  const notes: string[] = []
+  for (let i = 0; i < headings.length; i++) {
+    const m = headings[i]
+    const type = m[1]
+    const start = (m.index ?? 0) + m[0].length
+    const end = i + 1 < headings.length ? headings[i + 1].index : body.length
+    const section = body.slice(start, end)
+    for (const rawLine of section.split('\n')) {
+      const line = rawLine.trim()
+      if (line.startsWith('- ')) {
+        notes.push(`[${type}] ${line.slice(2).trim()}`)
+      }
+    }
+  }
+  return notes
+}
+
+function cleanVersion(tag: string): string {
+  // Releases tagged `vX.Y.Z` (the canonical scheme) and the legacy
+  // `release-X.Y.Z[-N]` form both reduce to `X.Y.Z[-N]`.
+  return tag.replace(/^v/, '').replace(/^release-/, '')
+}
+
 export async function getChangeLog(
   limit?: number
 ): Promise<ReadonlyArray<ReleaseMetadata>> {
-  const changelogURL = new URL(
-    'https://central.github.com/deployments/desktop/desktop/changelog.json'
-  )
+  const url = new URL('https://api.github.com/repos/beats-dh/desktop/releases')
+  // GitHub caps `per_page` at 100 — fine for "What's new" callers (default
+  // 30) and the contributor-thank-you sweep that asks for 250 (it'll just
+  // get the most recent 100).
+  url.searchParams.set('per_page', String(Math.min(limit ?? 30, 100)))
 
-  if (__RELEASE_CHANNEL__ === 'beta' || __RELEASE_CHANNEL__ === 'test') {
-    changelogURL.searchParams.set('env', __RELEASE_CHANNEL__)
-  }
-
-  if (limit !== undefined) {
-    changelogURL.searchParams.set('limit', limit.toString())
-  }
-
-  const response = await fetch(changelogURL.toString(), {
-    headers: { 'user-agent': getUserAgent() },
+  const response = await fetch(url.toString(), {
+    headers: {
+      'user-agent': getUserAgent(),
+      accept: 'application/vnd.github+json',
+    },
   })
-  if (response.ok) {
-    const releases: ReadonlyArray<ReleaseMetadata> = await response.json()
-    return releases
-  } else {
+  if (!response.ok) {
     return []
   }
+  const releases: ReadonlyArray<GitHubRelease> = await response.json()
+  const includePrereleases =
+    __RELEASE_CHANNEL__ === 'beta' || __RELEASE_CHANNEL__ === 'test'
+
+  return releases
+    .filter(r => !r.draft && (includePrereleases || !r.prerelease))
+    .map<ReleaseMetadata>(r => ({
+      name: r.name ?? r.tag_name,
+      notes: parseReleaseBodyToNotes(r.body ?? ''),
+      pub_date: r.published_at ?? new Date(0).toISOString(),
+      version: cleanVersion(r.tag_name),
+    }))
 }
 
 export async function generateReleaseSummary(

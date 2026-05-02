@@ -135,12 +135,22 @@ export function getDistArchitecture(): 'arm64' | 'x64' | 'armv7l' {
 }
 
 export function getUpdatesURL() {
-  // It is also possible to use a `x64/` path, but for now we'll leave the
-  // original URL without architecture in it (which will still work for
-  // compatibility reasons) in case anything goes wrong until we have everything
-  // sorted out.
-  const architecturePath = getDistArchitecture() === 'arm64' ? 'arm64/' : ''
-  return `https://central.github.com/api/deployments/desktop/desktop/${architecturePath}latest?version=${version}&env=${getChannel()}`
+  // The fork uses `update.electronjs.org`, the Electron team's free service
+  // that proxies a public GitHub repo's Releases API into a Squirrel-
+  // compatible feed. URL shape:
+  //
+  //   https://update.electronjs.org/<owner>/<repo>/<platform>-<arch>/<version>
+  //
+  // Linux is intentionally not handled here — the renderer gates auto-update
+  // behind `__LINUX__` (see app/src/ui/app.tsx → checkForUpdates) so the URL
+  // is computed but never queried on Linux builds.
+  //
+  // For the service to recognise a release, its `tag_name` must be clean
+  // semver (`vX.Y.Z`); see `.github/workflows/ci-linux.yml` publish job for
+  // how we map our `release-X.Y.Z` triggers onto v-tagged Releases.
+  const platform = process.platform === 'darwin' ? 'darwin' : 'win32'
+  const arch = getDistArchitecture() === 'arm64' ? 'arm64' : 'x64'
+  return `https://update.electronjs.org/beats-dh/desktop/${platform}-${arch}/${version}`
 }
 
 export function shouldMakeDelta() {
