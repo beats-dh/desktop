@@ -359,7 +359,13 @@ export class BranchListItem extends React.Component<
           tooltip={nameTooltip}
           onlyWhenOverflowed={onlyWhenOverflowed}
           tagName="div"
-          disabled={enableAccessibleListToolTips()}
+          // When the unified accessible-tooltips flag is on, the List
+          // component handles per-row tooltips via aria-label and per-row
+          // TooltippedContents are redundant. We keep ours enabled in the
+          // unpushed case anyway, because the suffix ("not pushed to
+          // remote") carries information the visual tint + italic alone
+          // don't fully convey for sighted users.
+          disabled={!isUnpushed && enableAccessibleListToolTips()}
         >
           <HighlightText text={name} highlight={this.props.matches.title} />
         </TooltippedContent>

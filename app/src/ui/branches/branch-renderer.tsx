@@ -1,6 +1,6 @@
 import * as React from 'react'
 
-import { Branch } from '../../models/branch'
+import { Branch, BranchType } from '../../models/branch'
 import { Repository } from '../../models/repository'
 import { AheadBehindStore } from '../../lib/stores/ahead-behind-store'
 
@@ -60,8 +60,17 @@ export function getDefaultAriaLabelForBranch(
 ): string {
   const branch = item.branch
 
+  // Mirror the visual "unpushed" cue for screen readers. We can only flag
+  // the synchronous case here (a local branch with no upstream tracking
+  // ref at all) — the ahead-of-upstream case is async per row and not
+  // resolvable at aria-label time. Truly local branches are always
+  // unpushed by definition, so the announcement matches the row's tint.
+  const isUnpushed =
+    branch.type === BranchType.Local && branch.upstream === null
+  const unpushedSuffix = isUnpushed ? ', not pushed to remote' : ''
+
   if (!authorDate) {
-    return branch.name
+    return `${branch.name}${unpushedSuffix}`
   }
 
   const { relativeText, absoluteText } = getRelativeTimeInfoFromDate(
@@ -69,7 +78,7 @@ export function getDefaultAriaLabelForBranch(
     true
   )
 
-  return `${item.branch.name} ${
+  return `${branch.name} ${
     getPreferAbsoluteDates() ? absoluteText : relativeText
-  }`
+  }${unpushedSuffix}`
 }
