@@ -14,8 +14,11 @@ type ReleaseNoteEntry = {
   contributor?: string
 }
 
-// 3 architectures * 3 package formats * 2 files (package + checksum file)
-const SUCCESSFUL_RELEASE_FILE_COUNT = 3 * 3 * 2
+// Linux baseline: 3 architectures * 3 package formats * 2 files (package +
+// checksum file). Windows and macOS artifacts vary (.exe / .msi / .nupkg /
+// .zip per arch) so we no longer enforce an exact total — we only require
+// that the Linux baseline is present.
+const MINIMUM_RELEASE_FILE_COUNT = 3 * 3 * 2
 
 const Glob = glob.GlobSync
 
@@ -45,9 +48,9 @@ const matches = files.found as Array<string>
 
 const fileCount = matches.length
 
-if (SUCCESSFUL_RELEASE_FILE_COUNT !== fileCount) {
+if (fileCount < MINIMUM_RELEASE_FILE_COUNT) {
   console.error(
-    `🔴 Artifacts folder has ${fileCount} assets, expecting ${SUCCESSFUL_RELEASE_FILE_COUNT}. Please check the GH Actions artifacts to see which are missing.`
+    `🔴 Artifacts folder has ${fileCount} assets, expecting at least ${MINIMUM_RELEASE_FILE_COUNT} (Linux baseline). Please check the GH Actions artifacts to see which are missing.`
   )
   process.exit(1)
 }
@@ -97,11 +100,23 @@ function parseCategory(str: string): ReleaseNotesGroupType | null {
 }
 
 function isInitialTag(tag: string): boolean {
-  return tag.endsWith('-linux1') || tag.endsWith('-test1')
+  // Tag shapes that should pull notes from the upstream changelog:
+  //   - X.Y.Z              → first multiplatform release of an upstream version
+  //   - X.Y.Z-N            → respin of the same upstream version (reuses notes)
+  //   - X.Y.Z-linuxN       → legacy Linux-only release line
+  //   - X.Y.Z-testN        → test build
+  return (
+    /^\d+\.\d+\.\d+(-\d+)?$/.test(tag) ||
+    /-linux\d+$/.test(tag) ||
+    /-test\d+$/.test(tag)
+  )
 }
 
 function getVersionWithoutSuffix(tag: string): string {
-  return tag.replace('-linux1', '').replace('-test1', '')
+  return tag
+    .replace(/-linux\d+$/, '')
+    .replace(/-test\d+$/, '')
+    .replace(/-\d+$/, '')
 }
 
 function getReleaseGroups(version: string): ReleaseNotesGroups {

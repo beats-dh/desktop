@@ -7,8 +7,8 @@ on:
       - linux
       - 'linux-release-*'
     tags:
-      - 'release-*.*.*-linux*'
-      - 'release-*.*.*-test*'
+      - 'release-*.*.*'
+      - 'release-*.*.*-*'
   pull_request:
     branches:
       - linux
@@ -90,6 +90,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@v4
 
@@ -99,10 +100,45 @@ jobs:
           node-version: 22.22.2
           cache: yarn
 
-      - name: Download all artifacts
+      - name: Download Linux artifacts
         uses: actions/download-artifact@v4
         with:
           path: './artifacts'
+
+      - name: Wait for CI workflow (Windows/macOS) and download its artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # The `CI` workflow runs in parallel on the same tag push and produces
+          # the Windows/macOS artifacts. Find its run for this commit, wait
+          # until it completes, then pull every artifact into ./artifacts/ so
+          # the release step picks them up alongside the Linux ones.
+          set -euo pipefail
+
+          RUN_ID=""
+          for attempt in $(seq 1 60); do
+            RUN_ID=$(gh run list \
+              --workflow=ci.yml \
+              --commit="$GITHUB_SHA" \
+              --limit 1 \
+              --json databaseId \
+              --jq '.[0].databaseId // empty' || true)
+            if [ -n "$RUN_ID" ]; then break; fi
+            echo "Waiting for CI run on $GITHUB_SHA to appear (attempt $attempt)..."
+            sleep 10
+          done
+
+          if [ -z "$RUN_ID" ]; then
+            echo "::warning::Could not locate a CI workflow run for $GITHUB_SHA — release will only contain Linux artifacts."
+            exit 0
+          fi
+
+          echo "Found CI run $RUN_ID — waiting for completion..."
+          gh run watch "$RUN_ID" --exit-status --repo "$GITHUB_REPOSITORY" \
+            || echo "::warning::CI run $RUN_ID did not finish cleanly; continuing with whatever artifacts are available."
+
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --dir ./artifacts \
+            || echo "::warning::Failed to download CI artifacts; release may be missing Windows/macOS files."
 
       - name: Display structure of downloaded files
         run: ls -R
@@ -114,10 +150,6 @@ jobs:
           echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_ENV
           tagNameWithoutPrefix="${RELEASE_TAG:8}"
           echo "RELEASE_TAG_WITHOUT_PREFIX=${tagNameWithoutPrefix}" >> $GITHUB_ENV
-
-      # TODO: generate release notes
-      #    - pull in default if version matches X.Y.Z-linux1
-      #    - otherwise stub template
 
       - name: Generate release notes
         run: |
@@ -137,14 +169,18 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          name: GitHub Desktop for Linux ${{ env.RELEASE_TAG_WITHOUT_PREFIX }}
+          name: GitHub Desktop ${{ env.RELEASE_TAG_WITHOUT_PREFIX }}
           body_path: script/release_notes.txt
           files: |
             artifacts/**/*.AppImage
             artifacts/**/*.deb
             artifacts/**/*.rpm
             artifacts/**/*.sha256
+            artifacts/**/*.exe
+            artifacts/**/*.msi
+            artifacts/**/*.nupkg
+            artifacts/**/*.zip
           draft: true
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
