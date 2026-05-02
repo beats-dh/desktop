@@ -205,7 +205,8 @@ async function formatWithStylua(
   // Imported via `require` with a structural cast (rather than
   // `typeof import(...)`) so the build doesn't require the package's
   // type declarations to be present in node_modules — the package is
-  // listed in webpack `externals` and resolved at runtime.
+  // listed in webpack `externals` and resolved at runtime, mirroring
+  // the `clang-format-node` pattern above.
   const stylua = require('@johnnymorganz/stylua') as {
     formatCode?: (code: string, config?: object) => string
     default?: { formatCode?: (code: string, config?: object) => string }
