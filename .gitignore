@@ -15,6 +15,7 @@ app/vendor/format-tools/
 .vs/
 .vscode/*.log
 .eslintcache
+.cache/
 *.iml
 .envrc
 junit*.xml

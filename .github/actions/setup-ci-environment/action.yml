@@ -31,9 +31,76 @@ runs:
       shell: bash
       run: choco install ffmpeg --yes --no-progress
 
+    # `electron-packager` uses `@electron/get`, which has no env-var hook —
+    # it always falls back to `env-paths('electron').cache` if no explicit
+    # `cacheRoot` is passed. The `electron` package's post-install does the
+    # same when `electron_config_cache` is unset. So we cache that default
+    # path directly: no code change, covers both consumers.
+    #
+    # `ELECTRON_CACHE` (the var commonly cited online) is not read by either
+    # path in current versions; setting it is a no-op.
+    - name: Resolve Electron cache directory
+      shell: bash
+      run: |
+        case "$RUNNER_OS" in
+          Linux)
+            cache_dir="$HOME/.cache/electron"
+            ;;
+          macOS)
+            cache_dir="$HOME/Library/Caches/electron"
+            ;;
+          Windows)
+            # `$LOCALAPPDATA` on Windows runners is `C:\Users\runneradmin\
+            # AppData\Local`; Git Bash exposes it as a regular env var.
+            cache_dir="$LOCALAPPDATA/electron/Cache"
+            ;;
+        esac
+        mkdir -p "$cache_dir"
+        echo "ELECTRON_DEFAULT_CACHE=$cache_dir" >> "$GITHUB_ENV"
+
+    - name: Restore Electron binary cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.ELECTRON_DEFAULT_CACHE }}
+        key:
+          electron-${{ runner.os }}-${{ inputs.arch }}-${{
+          hashFiles('app/package.json', 'app/yarn.lock') }}
+        restore-keys: |
+          electron-${{ runner.os }}-${{ inputs.arch }}-
+
+    # node_modules cache. Native modules (keytar, dugite, desktop-trampoline,
+    # etc.) are compiled per OS+arch+Node version, so the key must include
+    # all three. patches/** invalidates when patch-package input changes;
+    # the postinstall scripts also feed into what lands under node_modules.
+    - name: Restore node_modules
+      id: node-modules-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          node_modules
+          app/node_modules
+          app/vendor/format-tools
+        key:
+          node_modules-${{ runner.os }}-${{ inputs.arch }}-node${{
+          inputs.node-version }}-${{ hashFiles('package.json',
+          'app/package.json', 'yarn.lock', 'app/yarn.lock', 'patches/**',
+          'script/post-install.ts', 'script/format-tools-download.ts') }}
+
     - name: Install and build dependencies
       shell: bash
       run: yarn
       env:
         npm_config_arch: ${{ inputs.arch }}
         TARGET_ARCH: ${{ inputs.arch }}
+
+    # Webpack filesystem cache. The cache itself is invalidated internally by
+    # webpack via buildDependencies + content hashes, so we use a relaxed
+    # restore-keys policy so each commit picks up the previous build's cache
+    # and incrementally compiles only what changed.
+    - name: Restore webpack cache
+      uses: actions/cache@v4
+      with:
+        path: .cache/webpack
+        key: webpack-${{ runner.os }}-${{ inputs.arch }}-${{ github.sha }}
+        restore-keys: |
+          webpack-${{ runner.os }}-${{ inputs.arch }}-

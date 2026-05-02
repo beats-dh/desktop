@@ -2,6 +2,62 @@ name: 'GitHub Desktop for Linux packaging (arm64)'
 description:
   'Cross-compiles and packages Desktop for Linux arm64 inside an Ubuntu 22.04
   container with Node 22 LTS.'
+
 runs:
-  using: 'docker'
-  image: 'Dockerfile'
+  using: composite
+  steps:
+    - name: Restore node_modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          node_modules
+          app/node_modules
+          app/vendor/format-tools
+        key:
+          linux-arm64-node_modules-${{ hashFiles('package.json',
+          'app/package.json', 'yarn.lock', 'app/yarn.lock', 'patches/**',
+          'script/post-install.ts', 'script/format-tools-download.ts',
+          '.github/actions/ubuntu-arm64-packaging/Dockerfile') }}
+        restore-keys: |
+          linux-arm64-node_modules-
+
+    - name: Restore webpack cache
+      uses: actions/cache@v4
+      with:
+        path: .cache/webpack
+        key: linux-arm64-webpack-${{ github.sha }}
+        restore-keys: |
+          linux-arm64-webpack-
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build packaging image (cached)
+      uses: docker/build-push-action@v6
+      with:
+        context: ${{ github.action_path }}
+        load: true
+        tags: desktop-linux-arm64-packaging:latest
+        cache-from: type=gha,scope=desktop-linux-arm64-packaging
+        cache-to: type=gha,scope=desktop-linux-arm64-packaging,mode=max
+
+    - name: Run packaging container
+      shell: bash
+      run: |
+        # See ubuntu-amd64-packaging/action.yml for the rationale on the
+        # /dev/null overrides — same story applies to every container we
+        # spawn from a composite action instead of `using: docker`.
+        docker run --rm \
+          -v "$GITHUB_WORKSPACE:/github/workspace" \
+          -w /github/workspace \
+          -e CI=true \
+          -e GITHUB_ACTIONS=true \
+          -e GITHUB_REF \
+          -e GITHUB_SHA \
+          -e GITHUB_REPOSITORY \
+          -e RELEASE_CHANNEL \
+          -e GITHUB_STEP_SUMMARY=/dev/null \
+          -e GITHUB_OUTPUT=/dev/null \
+          -e GITHUB_ENV=/dev/null \
+          -e GITHUB_PATH=/dev/null \
+          desktop-linux-arm64-packaging:latest
