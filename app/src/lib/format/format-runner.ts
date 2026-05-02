@@ -10,13 +10,13 @@ import { isAbsolute, join } from 'path'
 import {
   FORMAT_TOOLS,
   FormatTool,
-  JsModuleFormatTool,
-  SpawnFormatTool,
+  IJsModuleFormatTool,
+  ISpawnFormatTool,
   getFormatToolForFile,
   repoHasToolConfig,
 } from './format-language'
 
-export interface FormatResult {
+export interface IFormatResult {
   /** Files whose contents were rewritten by a formatter. */
   readonly formatted: ReadonlyArray<string>
   /**
@@ -65,7 +65,7 @@ function spawnTool(
 const SPAWN_BATCH_SIZE = 50
 
 async function runSpawnTool(
-  tool: SpawnFormatTool,
+  tool: ISpawnFormatTool,
   files: ReadonlyArray<string>,
   repoPath: string,
   formatted: string[],
@@ -104,7 +104,7 @@ async function runSpawnTool(
 }
 
 async function runJsModuleTool(
-  tool: JsModuleFormatTool,
+  tool: IJsModuleFormatTool,
   files: ReadonlyArray<string>,
   repoPath: string,
   formatted: string[],
@@ -123,9 +123,7 @@ async function runJsModuleTool(
         })
       }
     } catch (err: any) {
-      log.warn(
-        `[format] ${tool.id} threw on ${file}: ${err?.message ?? err}`
-      )
+      log.warn(`[format] ${tool.id} threw on ${file}: ${err?.message ?? err}`)
       skipped.push({
         path: file,
         reason: `${tool.displayName} threw: ${err?.message ?? 'unknown'}`,
@@ -142,7 +140,7 @@ async function runJsModuleTool(
 export async function formatFilesInRepo(
   repoPath: string,
   filePaths: ReadonlyArray<string>
-): Promise<FormatResult> {
+): Promise<IFormatResult> {
   const formatted: string[] = []
   const skipped: Array<{ path: string; reason: string }> = []
 

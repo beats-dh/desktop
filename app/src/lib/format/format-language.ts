@@ -23,7 +23,7 @@ import {
 } from 'fs'
 import { join } from 'path'
 
-export interface FormatToolBase {
+export interface IFormatToolBase {
   /** Stable identifier, used in logs and metrics. */
   readonly id: string
   /** Display name for UI / log messages. */
@@ -52,7 +52,7 @@ export interface FormatToolBase {
   readonly configFiles: ReadonlyArray<string>
 }
 
-export interface SpawnFormatTool extends FormatToolBase {
+export interface ISpawnFormatTool extends IFormatToolBase {
   readonly kind: 'spawn'
   /**
    * Resolve the absolute path to the platform-specific binary at runtime.
@@ -66,7 +66,7 @@ export interface SpawnFormatTool extends FormatToolBase {
   readonly buildArgs: (files: ReadonlyArray<string>) => Array<string>
 }
 
-export interface JsModuleFormatTool extends FormatToolBase {
+export interface IJsModuleFormatTool extends IFormatToolBase {
   readonly kind: 'jsModule'
   /**
    * Format a single file in place. Reads, formats, writes back. Returns
@@ -75,13 +75,10 @@ export interface JsModuleFormatTool extends FormatToolBase {
    * `require()` the underlying npm package — webpack leaves these untouched
    * because they're listed in the `externals` array.
    */
-  readonly formatFile: (
-    filePath: string,
-    repoPath: string
-  ) => Promise<boolean>
+  readonly formatFile: (filePath: string, repoPath: string) => Promise<boolean>
 }
 
-export type FormatTool = SpawnFormatTool | JsModuleFormatTool
+export type FormatTool = ISpawnFormatTool | IJsModuleFormatTool
 
 async function resolveClangFormatBin(): Promise<string | null> {
   try {
@@ -98,13 +95,27 @@ async function resolveClangFormatBin(): Promise<string | null> {
 /** Folder name we use for vendored format-tool binaries (per platform-arch). */
 function vendorPlatformDir(): string | null {
   const arch = process.arch
-  if (process.platform === 'win32' && arch === 'x64') return 'win32-x64'
-  if (process.platform === 'win32' && arch === 'arm64') return 'win32-arm64'
-  if (process.platform === 'linux' && arch === 'x64') return 'linux-x64'
-  if (process.platform === 'linux' && arch === 'arm64') return 'linux-arm64'
-  if (process.platform === 'linux' && arch === 'arm') return 'linux-armv7l'
-  if (process.platform === 'darwin' && arch === 'x64') return 'darwin-x64'
-  if (process.platform === 'darwin' && arch === 'arm64') return 'darwin-arm64'
+  if (process.platform === 'win32' && arch === 'x64') {
+    return 'win32-x64'
+  }
+  if (process.platform === 'win32' && arch === 'arm64') {
+    return 'win32-arm64'
+  }
+  if (process.platform === 'linux' && arch === 'x64') {
+    return 'linux-x64'
+  }
+  if (process.platform === 'linux' && arch === 'arm64') {
+    return 'linux-arm64'
+  }
+  if (process.platform === 'linux' && arch === 'arm') {
+    return 'linux-armv7l'
+  }
+  if (process.platform === 'darwin' && arch === 'x64') {
+    return 'darwin-x64'
+  }
+  if (process.platform === 'darwin' && arch === 'arm64') {
+    return 'darwin-arm64'
+  }
   return null
 }
 
@@ -117,10 +128,14 @@ function vendorPlatformDir(): string | null {
  */
 function resolveVendoredBin(name: string): string | null {
   const platDir = vendorPlatformDir()
-  if (platDir === null) return null
+  if (platDir === null) {
+    return null
+  }
   const ext = process.platform === 'win32' ? '.exe' : ''
   const resPath = (process as NodeJS.Process).resourcesPath
-  if (!resPath) return null
+  if (!resPath) {
+    return null
+  }
   return join(resPath, 'app', 'vendor', 'format-tools', platDir, name + ext)
 }
 
@@ -187,13 +202,17 @@ async function formatWithStylua(
   // file gets formatted with library defaults. Refining to actually parse
   // stylua.toml is a nice-to-have; defaults match StyLua's own defaults so
   // most projects will be fine.
-  const stylua =
-    require('@johnnymorganz/stylua') as typeof import('@johnnymorganz/stylua')
+  // Imported via `require` with a structural cast (rather than
+  // `typeof import(...)`) so the build doesn't require the package's
+  // type declarations to be present in node_modules — the package is
+  // listed in webpack `externals` and resolved at runtime, mirroring
+  // the `clang-format-node` pattern above.
+  const stylua = require('@johnnymorganz/stylua') as {
+    formatCode?: (code: string, config?: object) => string
+    default?: { formatCode?: (code: string, config?: object) => string }
+  }
   const source = readFileSync(filePath, 'utf8')
-  // Cast to `any` because the WASM package's TS types don't always reflect
-  // the runtime API and it ships with a few synonymous entry points.
-  const formatCode: (code: string, config?: object) => string =
-    (stylua as any).formatCode ?? (stylua as any).default?.formatCode
+  const formatCode = stylua.formatCode ?? stylua.default?.formatCode
   if (typeof formatCode !== 'function') {
     throw new Error('stylua: no formatCode export')
   }
@@ -219,14 +238,29 @@ export const FORMAT_TOOLS: ReadonlyArray<FormatTool> = [
     id: 'prettier',
     displayName: 'Prettier',
     extensions: [
-      'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs',
-      'json', 'jsonc', 'json5',
-      'scss', 'css', 'less',
-      'html', 'htm',
-      'yaml', 'yml',
-      'md', 'mdx',
-      'xml', 'svg',
-      'vue', 'graphql', 'gql',
+      'ts',
+      'tsx',
+      'js',
+      'jsx',
+      'mjs',
+      'cjs',
+      'json',
+      'jsonc',
+      'json5',
+      'scss',
+      'css',
+      'less',
+      'html',
+      'htm',
+      'yaml',
+      'yml',
+      'md',
+      'mdx',
+      'xml',
+      'svg',
+      'vue',
+      'graphql',
+      'gql',
     ],
     // Prettier honors a wide set of config locations. We keep this list
     // narrow on purpose: the user has explicitly configured Prettier when
@@ -376,7 +410,9 @@ function readShebangInterpreter(filePath: string): string | null {
       const read = readSync(fd, buf, 0, 256, 0)
       const head = buf.slice(0, read).toString('utf8').split('\n', 1)[0]
       const m = /^#!\s*(?:\S*\/env\s+)?(\S+)/.exec(head)
-      if (m === null) return null
+      if (m === null) {
+        return null
+      }
       return m[1].replace(/.*[\\/]/, '').toLowerCase()
     } finally {
       closeSync(fd)
@@ -386,10 +422,7 @@ function readShebangInterpreter(filePath: string): string | null {
   }
 }
 
-export function repoHasToolConfig(
-  repoPath: string,
-  tool: FormatTool
-): boolean {
+export function repoHasToolConfig(repoPath: string, tool: FormatTool): boolean {
   // Ruff has a special probe: `pyproject.toml` is too generic — every Python
   // project ships one — so its bare presence isn't proof the user opted into
   // Ruff. Require an explicit `[tool.ruff]` section in pyproject.toml, OR a

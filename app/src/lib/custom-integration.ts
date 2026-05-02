@@ -65,6 +65,20 @@ async function getAppBundleID(path: string) {
  * Replace the target path placeholder in the custom integration arguments with
  * the actual target path.
  *
+ * No surrounding quotes are added: the args produced here are passed straight
+ * to `child_process.spawn(cmd, args)` *without* `shell: true`, so each entry
+ * of the array is delivered to the spawned process as one argv slot. Wrapping
+ * the path in `"…"` would embed those quotes as literal characters, and the
+ * editor would receive a path that begins and ends with `"` and fail to open
+ * the file. `string-argv` already strips any quotes the user wrote around the
+ * placeholder when parsing the saved arguments string.
+ *
+ * The replacement is provided as a function (not a plain string) so that any
+ * `$&`, `$$`, `` $` ``, `$'`, or `$<name>` sequences inside `repoPath` are
+ * inserted literally instead of being interpreted by `replaceAll` as
+ * substitution patterns. Repos cloned to paths containing `$` characters
+ * are rare but valid on every platform we ship.
+ *
  * @param args The custom integration arguments
  * @param repoPath The target path to replace the placeholder with
  */
@@ -72,14 +86,7 @@ export function expandTargetPathArgument(
   args: ReadonlyArray<string>,
   repoPath: string
 ): ReadonlyArray<string> {
-  return args.map(arg =>
-    arg
-      // If the placeholder is already quoted (e.g. "%TARGET_PATH%"), replace
-      // it including the surrounding quotes to avoid double-quoting the path.
-      .replaceAll(`"${TargetPathArgument}"`, `"${repoPath}"`)
-      // For unquoted occurrences, wrap the path in quotes.
-      .replaceAll(TargetPathArgument, `"${repoPath}"`)
-  )
+  return args.map(arg => arg.replaceAll(TargetPathArgument, () => repoPath))
 }
 
 /**
