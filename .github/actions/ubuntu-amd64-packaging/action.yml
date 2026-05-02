@@ -49,6 +49,14 @@ runs:
     - name: Run packaging container
       shell: bash
       run: |
+        # `using: docker` mode automatically mounts the runner's temp dir so
+        # GITHUB_STEP_SUMMARY / OUTPUT / ENV / PATH point at writable files
+        # inside the container. We're running the image manually via
+        # `docker run`, so we point those at /dev/null — the unit-test step
+        # uses node-test-github-reporter, which crashes on shutdown if it
+        # can't write to GITHUB_STEP_SUMMARY. Nothing inside the container
+        # actually needs the contents of these files; the host job owns the
+        # real summary.
         docker run --rm \
           -v "$GITHUB_WORKSPACE:/github/workspace" \
           -w /github/workspace \
@@ -58,4 +66,8 @@ runs:
           -e GITHUB_SHA \
           -e GITHUB_REPOSITORY \
           -e RELEASE_CHANNEL \
+          -e GITHUB_STEP_SUMMARY=/dev/null \
+          -e GITHUB_OUTPUT=/dev/null \
+          -e GITHUB_ENV=/dev/null \
+          -e GITHUB_PATH=/dev/null \
           desktop-linux-amd64-packaging:latest

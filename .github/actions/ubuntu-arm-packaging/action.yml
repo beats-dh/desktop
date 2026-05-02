@@ -43,6 +43,9 @@ runs:
     - name: Run packaging container
       shell: bash
       run: |
+        # See ubuntu-amd64-packaging/action.yml for the rationale on the
+        # /dev/null overrides — same story applies to every container we
+        # spawn from a composite action instead of `using: docker`.
         docker run --rm \
           -v "$GITHUB_WORKSPACE:/github/workspace" \
           -w /github/workspace \
@@ -52,4 +55,8 @@ runs:
           -e GITHUB_SHA \
           -e GITHUB_REPOSITORY \
           -e RELEASE_CHANNEL \
+          -e GITHUB_STEP_SUMMARY=/dev/null \
+          -e GITHUB_OUTPUT=/dev/null \
+          -e GITHUB_ENV=/dev/null \
+          -e GITHUB_PATH=/dev/null \
           desktop-linux-arm-packaging:latest
