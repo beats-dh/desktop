@@ -2,6 +2,54 @@ name: 'GitHub Desktop for Linux packaging (arm)'
 description:
   'Cross-compiles and packages Desktop for Linux armhf inside an Ubuntu 22.04
   container with Node 22 LTS.'
+
 runs:
-  using: 'docker'
-  image: 'Dockerfile'
+  using: composite
+  steps:
+    - name: Restore node_modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          node_modules
+          app/node_modules
+          app/vendor/format-tools
+        key:
+          linux-arm-node_modules-${{ hashFiles('yarn.lock', 'app/yarn.lock',
+          'patches/**', 'script/post-install.ts',
+          'script/format-tools-download.ts') }}
+        restore-keys: |
+          linux-arm-node_modules-
+
+    - name: Restore webpack cache
+      uses: actions/cache@v4
+      with:
+        path: .cache/webpack
+        key: linux-arm-webpack-${{ github.sha }}
+        restore-keys: |
+          linux-arm-webpack-
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build packaging image (cached)
+      uses: docker/build-push-action@v6
+      with:
+        context: ${{ github.action_path }}
+        load: true
+        tags: desktop-linux-arm-packaging:latest
+        cache-from: type=gha,scope=desktop-linux-arm-packaging
+        cache-to: type=gha,scope=desktop-linux-arm-packaging,mode=max
+
+    - name: Run packaging container
+      shell: bash
+      run: |
+        docker run --rm \
+          -v "$GITHUB_WORKSPACE:/github/workspace" \
+          -w /github/workspace \
+          -e CI=true \
+          -e GITHUB_ACTIONS=true \
+          -e GITHUB_REF \
+          -e GITHUB_SHA \
+          -e GITHUB_REPOSITORY \
+          -e RELEASE_CHANNEL \
+          desktop-linux-arm-packaging:latest

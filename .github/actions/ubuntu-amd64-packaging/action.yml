@@ -2,6 +2,60 @@ name: 'GitHub Desktop for Linux packaging (amd64)'
 description:
   'Builds and packages Desktop for Linux x64 inside an Ubuntu 22.04 container
   with Node 22 LTS.'
+
 runs:
-  using: 'docker'
-  image: 'Dockerfile'
+  using: composite
+  steps:
+    # Pre-populate node_modules / format-tools on the host workspace before
+    # the container runs. The container mounts the workspace, so a cache hit
+    # turns the in-container `yarn` into a near-instant verify pass.
+    - name: Restore node_modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          node_modules
+          app/node_modules
+          app/vendor/format-tools
+        key:
+          linux-amd64-node_modules-${{ hashFiles('yarn.lock', 'app/yarn.lock',
+          'patches/**', 'script/post-install.ts',
+          'script/format-tools-download.ts') }}
+        restore-keys: |
+          linux-amd64-node_modules-
+
+    - name: Restore webpack cache
+      uses: actions/cache@v4
+      with:
+        path: .cache/webpack
+        key: linux-amd64-webpack-${{ github.sha }}
+        restore-keys: |
+          linux-amd64-webpack-
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    # Replaces `using: docker` so we can plug GHA cache into the layer build.
+    # `cache-from`/`cache-to: type=gha` stores the apt installs, Node tarball,
+    # PPA setup, etc. across runs — this is the biggest single saving in CI.
+    - name: Build packaging image (cached)
+      uses: docker/build-push-action@v6
+      with:
+        context: ${{ github.action_path }}
+        load: true
+        tags: desktop-linux-amd64-packaging:latest
+        cache-from: type=gha,scope=desktop-linux-amd64-packaging
+        cache-to: type=gha,scope=desktop-linux-amd64-packaging,mode=max
+
+    - name: Run packaging container
+      shell: bash
+      run: |
+        docker run --rm \
+          -v "$GITHUB_WORKSPACE:/github/workspace" \
+          -w /github/workspace \
+          -e CI=true \
+          -e GITHUB_ACTIONS=true \
+          -e GITHUB_REF \
+          -e GITHUB_SHA \
+          -e GITHUB_REPOSITORY \
+          -e RELEASE_CHANNEL \
+          desktop-linux-amd64-packaging:latest

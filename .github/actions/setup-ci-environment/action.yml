@@ -31,9 +31,59 @@ runs:
       shell: bash
       run: choco install ffmpeg --yes --no-progress
 
+    # Pin Electron's binary cache to a stable path under the workspace so
+    # actions/cache can find it on every OS. Without this `electron-packager`
+    # re-downloads ~150 MB per matrix job.
+    - name: Configure Electron cache directory
+      shell: bash
+      run: |
+        cache_dir="$RUNNER_TEMP/electron-cache"
+        mkdir -p "$cache_dir"
+        echo "ELECTRON_CACHE=$cache_dir" >> "$GITHUB_ENV"
+
+    - name: Restore Electron binary cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.ELECTRON_CACHE }}
+        key:
+          electron-${{ runner.os }}-${{ inputs.arch }}-${{
+          hashFiles('app/package.json', 'app/yarn.lock') }}
+        restore-keys: |
+          electron-${{ runner.os }}-${{ inputs.arch }}-
+
+    # node_modules cache. Native modules (keytar, dugite, desktop-trampoline,
+    # etc.) are compiled per OS+arch+Node version, so the key must include
+    # all three. patches/** invalidates when patch-package input changes;
+    # the postinstall scripts also feed into what lands under node_modules.
+    - name: Restore node_modules
+      id: node-modules-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          node_modules
+          app/node_modules
+          app/vendor/format-tools
+        key:
+          node_modules-${{ runner.os }}-${{ inputs.arch }}-node${{
+          inputs.node-version }}-${{ hashFiles('yarn.lock', 'app/yarn.lock',
+          'patches/**', 'script/post-install.ts',
+          'script/format-tools-download.ts') }}
+
     - name: Install and build dependencies
       shell: bash
       run: yarn
       env:
         npm_config_arch: ${{ inputs.arch }}
         TARGET_ARCH: ${{ inputs.arch }}
+
+    # Webpack filesystem cache. The cache itself is invalidated internally by
+    # webpack via buildDependencies + content hashes, so we use a relaxed
+    # restore-keys policy so each commit picks up the previous build's cache
+    # and incrementally compiles only what changed.
+    - name: Restore webpack cache
+      uses: actions/cache@v4
+      with:
+        path: .cache/webpack
+        key: webpack-${{ runner.os }}-${{ inputs.arch }}-${{ github.sha }}
+        restore-keys: |
+          webpack-${{ runner.os }}-${{ inputs.arch }}-

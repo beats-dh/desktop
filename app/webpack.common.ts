@@ -21,6 +21,17 @@ const outputDir = 'out'
 export const replacements = getReplacements()
 
 const commonConfig: webpack.Configuration = {
+  // Filesystem cache lets subsequent builds skip work for unchanged modules.
+  // CI restores `.cache/webpack` via actions/cache, so a typo-and-rebuild
+  // round-trip drops from ~minutes to seconds. `buildDependencies` makes
+  // webpack invalidate the cache when this config (or its imports) changes.
+  cache: {
+    type: 'filesystem',
+    cacheDirectory: path.resolve(__dirname, '..', '.cache', 'webpack'),
+    buildDependencies: {
+      config: [__filename],
+    },
+  },
   optimization: {
     emitOnErrors: false,
   },
