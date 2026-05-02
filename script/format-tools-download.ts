@@ -204,13 +204,7 @@ async function fetchAndPlaceBinary(
 
 export async function downloadFormatTools(projectRoot: string): Promise<void> {
   const platDir = currentPlatformArch()
-  const destDir = join(
-    projectRoot,
-    'app',
-    'vendor',
-    'format-tools',
-    platDir
-  )
+  const destDir = join(projectRoot, 'app', 'vendor', 'format-tools', platDir)
 
   await fetchAndPlaceBinary('shfmt', shfmtSpec(), destDir).catch(err => {
     console.warn(`[format-tools] shfmt: ${err.message}`)

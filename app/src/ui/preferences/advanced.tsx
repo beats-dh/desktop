@@ -193,11 +193,11 @@ export class Advanced extends React.Component<
           >
             <p>
               When enabled, GitHub Desktop runs the matching code formatter
-              (Prettier, clang-format, StyLua, …) on the files you're about
-              to commit and stages the result. Only repos that ship a
-              formatter config of their own (e.g. <code>.prettierrc</code>,{' '}
-              <code>.clang-format</code>, <code>stylua.toml</code>) are
-              touched — projects without a config are left alone.
+              (Prettier, clang-format, StyLua, …) on the files you're about to
+              commit and stages the result. Only repos that ship a formatter
+              config of their own (e.g. <code>.prettierrc</code>,{' '}
+              <code>.clang-format</code>, <code>stylua.toml</code>) are touched
+              — projects without a config are left alone.
             </p>
             <p>
               Whole-file formatting: any file the formatter rewrites will be
