@@ -100,15 +100,15 @@ function parseCategory(str: string): ReleaseNotesGroupType | null {
 }
 
 function isInitialTag(tag: string): boolean {
-  // Accepted "initial release" shapes for the multiplatform fork:
-  //   - X.Y.Z              → first release of an upstream version
-  //   - X.Y.Z-linux1       → legacy Linux-only first release
-  //   - X.Y.Z-test1        → test build
-  // Respins (X.Y.Z-2, X.Y.Z-3, ...) reuse notes from the initial release.
+  // Tag shapes that should pull notes from the upstream changelog:
+  //   - X.Y.Z              → first multiplatform release of an upstream version
+  //   - X.Y.Z-N            → respin of the same upstream version (reuses notes)
+  //   - X.Y.Z-linuxN       → legacy Linux-only release line
+  //   - X.Y.Z-testN        → test build
   return (
-    /^\d+\.\d+\.\d+$/.test(tag) ||
-    tag.endsWith('-linux1') ||
-    tag.endsWith('-test1')
+    /^\d+\.\d+\.\d+(-\d+)?$/.test(tag) ||
+    /-linux\d+$/.test(tag) ||
+    /-test\d+$/.test(tag)
   )
 }
 
