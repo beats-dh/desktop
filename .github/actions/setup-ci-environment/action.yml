@@ -65,9 +65,9 @@ runs:
           app/vendor/format-tools
         key:
           node_modules-${{ runner.os }}-${{ inputs.arch }}-node${{
-          inputs.node-version }}-${{ hashFiles('yarn.lock', 'app/yarn.lock',
-          'patches/**', 'script/post-install.ts',
-          'script/format-tools-download.ts') }}
+          inputs.node-version }}-${{ hashFiles('package.json',
+          'app/package.json', 'yarn.lock', 'app/yarn.lock', 'patches/**',
+          'script/post-install.ts', 'script/format-tools-download.ts') }}
 
     - name: Install and build dependencies
       shell: bash

@@ -30,6 +30,10 @@ const commonConfig: webpack.Configuration = {
     cacheDirectory: path.resolve(__dirname, '..', '.cache', 'webpack'),
     buildDependencies: {
       config: [__filename],
+      // Invalidate the cache when any dependency version changes — protects
+      // against bundles linking to a stale version of a transpiled module
+      // when only the lockfile (not source) changed.
+      lockfile: [path.resolve(__dirname, '..', 'yarn.lock')],
     },
   },
   optimization: {

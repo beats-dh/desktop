@@ -14,9 +14,10 @@ runs:
           app/node_modules
           app/vendor/format-tools
         key:
-          linux-arm-node_modules-${{ hashFiles('yarn.lock', 'app/yarn.lock',
-          'patches/**', 'script/post-install.ts',
-          'script/format-tools-download.ts') }}
+          linux-arm-node_modules-${{ hashFiles('package.json',
+          'app/package.json', 'yarn.lock', 'app/yarn.lock', 'patches/**',
+          'script/post-install.ts', 'script/format-tools-download.ts',
+          '.github/actions/ubuntu-arm-packaging/Dockerfile') }}
         restore-keys: |
           linux-arm-node_modules-
 
