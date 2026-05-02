@@ -100,10 +100,16 @@ jobs:
           node-version: 22.22.2
           cache: yarn
 
+      # `docker/build-push-action@v6` uploads `*.dockerbuild` build-record
+      # artifacts as a side-effect (for the GHA build summary UI). They're
+      # not part of the release; filter to just the packaged-output
+      # artifacts so a transient failure on one of those metadata blobs
+      # doesn't kill the publish job.
       - name: Download Linux artifacts
         uses: actions/download-artifact@v4
         with:
           path: './artifacts'
+          pattern: ubuntu-*-artifacts
 
       - name: Wait for CI workflow (Windows/macOS) and download its artifacts
         env:
