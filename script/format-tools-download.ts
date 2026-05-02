@@ -35,7 +35,7 @@ import { pipeline } from 'stream/promises'
 const SHFMT_VERSION = '3.11.0'
 const RUFF_VERSION = '0.7.4'
 
-interface BinarySpec {
+type BinarySpec = {
   /** URL of the asset to download. */
   readonly url: string
   /**
@@ -204,13 +204,7 @@ async function fetchAndPlaceBinary(
 
 export async function downloadFormatTools(projectRoot: string): Promise<void> {
   const platDir = currentPlatformArch()
-  const destDir = join(
-    projectRoot,
-    'app',
-    'vendor',
-    'format-tools',
-    platDir
-  )
+  const destDir = join(projectRoot, 'app', 'vendor', 'format-tools', platDir)
 
   await fetchAndPlaceBinary('shfmt', shfmtSpec(), destDir).catch(err => {
     console.warn(`[format-tools] shfmt: ${err.message}`)
