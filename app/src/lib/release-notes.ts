@@ -171,6 +171,14 @@ export async function generateReleaseSummary(
   version?: string
 ): Promise<ReadonlyArray<ReleaseSummary>> {
   const lastTenReleases = await getChangeLog()
+  // `getChangeLog` can legitimately return an empty array — the GitHub API
+  // is rate-limited (60 req/hr/IP for anonymous calls), the network can be
+  // down, or the repo could simply have no releases yet. Bail early so we
+  // don't dereference `lastTenReleases[0]` below; the upstream code path
+  // never hit this because central.github.com always returned something.
+  if (lastTenReleases.length === 0) {
+    return []
+  }
   const currentVersion = new semver.SemVer(version ?? getVersion())
   const recentReleases = lastTenReleases.filter(
     r =>
@@ -201,7 +209,7 @@ export async function generateDevReleaseSummary(): Promise<
     'utf8'
   ).catch(_ => null)
 
-  if (pretextDraft === null) {
+  if (pretextDraft === null || releases.length === 0) {
     return releases
   }
 
