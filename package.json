@@ -166,7 +166,7 @@
     "diff": "^8.0.3",
     "electron": "40.1.0",
     "electron-builder": "^25.1.8",
-    "electron-packager": "^17.1.1",
+    "electron-packager": "^17.1.2",
     "electron-winstaller": "^5.0.0",
     "eslint-plugin-github": "^5.1.5",
     "markdownlint-cli": "^0.32.2",
