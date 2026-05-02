@@ -7,6 +7,12 @@ Este arquivo orienta o Claude Code (claude.ai/code) ao trabalhar neste repositó
 ## Regras Obrigatórias
 
 - Sempre responder em **PT-BR**, independentemente do idioma da pergunta ou comando usado.
+- **App é multiplataforma — Linux, Windows e macOS.** Apesar do nome "Linux fork", as features e fixes adicionados ao fork **DEVEM** funcionar nos 3 sistemas. Específicos:
+  - Não usar utilities POSIX-only (`patch`, `chmod -x`, `sh`-isms) sem fallback Windows. Preferir Node APIs (`fs`, `child_process` com `shell: process.platform === 'win32'` quando necessário).
+  - Resolver paths com `path.join` / `path.sep`, nunca hardcodear `/` ou `\`.
+  - Spawn de processo: `spawn(cmd, args)` sem `shell: true` é o padrão; em scripts `.cmd` (Windows) usar `shell: true` ou resolver direto pro `.exe`.
+  - Bundling de binários: ter caminho per-plataforma (`win32-x64`, `linux-x64`, `darwin-arm64`, etc.) e fallback `null` quando a combinação não tem prebuilt.
+  - Antes de aplicar fix de bot, conferir se a mudança não quebra outra plataforma. CI roda em Linux/Windows/macOS — todas devem passar.
 - Nunca compilar, empacotar ou rodar o app (`yarn start`, `yarn build:*`, `yarn package`, `yarn test:e2e:*`) sem o usuário pedir explicitamente — esse projeto é Electron e os builds são caros (webpack + electron-packager).
 - Branch atual é `linux-update-3.5.8` (fork Linux). A branch base para PRs é `linux`, **não** `main` nem `development`. Sempre conferir antes de abrir PR.
 
@@ -54,9 +60,70 @@ yarn lint:fix               # prettier --write + eslint --fix
 yarn prettier               # apenas Prettier (check)
 yarn eslint                 # apenas ESLint
 yarn markdownlint           # lint dos .md
+yarn format:staged          # formata só o que está staged (mesma lógica do hook)
+yarn format:all             # formata todos os arquivos tracked
 ```
 
-ESLint usa regras customizadas em `eslint-rules/` (TypeScript, compiladas via `yarn check:eslint`) além de `eslint-plugin-github`, `eslint-plugin-react`, `eslint-plugin-jsdoc`. Prettier 2.x.
+ESLint usa regras customizadas em `eslint-rules/` (TypeScript, compiladas via `yarn check:eslint`) além de `eslint-plugin-github`, `eslint-plugin-react`, `eslint-plugin-jsdoc`.
+
+> **Duas versões do Prettier coexistem no repo:**
+> - **Prettier 2.x** — devDep do root `package.json`, usada pelos scripts `yarn lint` / `yarn lint:fix` e pelo dev hook em `.githooks/pre-commit`. Formata o código *deste* repositório (a fonte do GitHub Desktop).
+> - **Prettier 3.x** — runtime dep em `app/package.json`, bundled no app. Usada pela feature de auto-format-on-commit (Preferences > Advanced) pra formatar arquivos do *repo do usuário final*. Roda via `require('prettier').format()` em `app/src/lib/format/format-language.ts`.
+>
+> As duas não compartilham configuração nem se conflitam — cada uma resolve o seu próprio `.prettierrc` em runtime.
+
+#### Auto-format no commit (pre-commit hook do dev)
+
+`script/post-install.ts` aponta `core.hooksPath` para `.githooks/`, então depois de `yarn install` o hook `.githooks/pre-commit` formata os arquivos staged via `script/format-staged.mjs` e faz `git add` neles. Roteamento por extensão:
+
+| Extensões | Tool | Origem |
+| --- | --- | --- |
+| `.ts/.tsx/.js/.jsx/.json/.scss/.html/.yaml/.yml/.md/.xml/.svg` | Prettier (+ `@prettier/plugin-xml`) | devDep |
+| `.ts/.tsx/.js/.jsx` (em `eslint-rules/`, `script/`, `app/{src,typings,test}/`) | ESLint `--fix` | devDep |
+| `.cpp/.cc/.cxx/.c/.h/.hpp/.hh` | clang-format | devDep |
+| `.lua` | stylua | devDep |
+
+Bypass: `SKIP_FORMAT=1 git commit ...`. Se o binário de uma tool não estiver disponível (ex.: clone fresco sem `yarn install`), o hook avisa e segue — não bloqueia commit.
+
+#### Auto-format no commit do **usuário final** (in-app)
+
+Feature opt-in em **Preferences > Advanced > Auto-format files before commit** (default off). Quando ligado, antes de `createCommit` ([app/src/lib/stores/app-store.ts:_commitIncludedChanges](app/src/lib/stores/app-store.ts)), o app:
+
+1. Pega a lista de paths que entrariam no commit
+2. Roteia por extensão pro tool certo via `getFormatToolForFile()`
+3. Pula tools sem **config no repo do usuário** — sem config = não formata (decisão "respeita repo, não impõe defaults")
+4. Executa o formatador (CLI spawn ou JS API, ver tabela abaixo)
+5. Reseta a `DiffSelection` dos arquivos formatados pra "include all" (whole-file commit)
+6. Continua o commit normal
+
+Implementação em [app/src/lib/format/](app/src/lib/format/): `format-language.ts` é o registry (`FormatTool = SpawnFormatTool | JsModuleFormatTool`), `format-runner.ts` faz dispatch. Falha de formatação **nunca bloqueia o commit** — só loga.
+
+##### Linguagens cobertas
+
+| Linguagem | Tool | Kind | De onde vem o binário/módulo | Config probe no repo |
+| --- | --- | --- | --- | --- |
+| C/C++/ObjC/Java | clang-format | spawn | `clang-format-node` npm (LLVM atualizado weekly) | `.clang-format`, `_clang-format` |
+| TS/TSX/JS/JSX/MJS/CJS, JSON, MD/MDX, YAML, HTML, CSS/SCSS/LESS, Vue, GraphQL | Prettier | jsModule | `prettier@3` em `app/deps` | `.prettierrc[*.{json,yml,js,toml,...}]`, `prettier.config.{js,cjs,mjs}` |
+| XML/SVG | Prettier+plugin-xml | jsModule | `@prettier/plugin-xml` em `app/deps` | mesmas do Prettier |
+| Lua/Luau | StyLua | jsModule | `@johnnymorganz/stylua` (WASM) em `app/deps` | `stylua.toml`, `.stylua.toml` |
+| Shell (sh/bash/zsh/bats) | shfmt | spawn | Binário baixado em [post-install](script/format-tools-download.ts) → `app/vendor/format-tools/<plat-arch>/` | `.editorconfig`, `.shfmt` |
+| Python | Ruff | spawn | Mesmo mecanismo (download em post-install) | `ruff.toml`, `.ruff.toml`, `pyproject.toml` |
+| Rust | rustfmt | spawn | **PATH do sistema** (via `which`) | `rustfmt.toml`, `.rustfmt.toml` |
+| Go | gofmt | spawn | **PATH do sistema** | `go.mod` |
+
+##### Arquitetura de empacotamento
+
+Tools em `app/dependencies` (clang-format-node, prettier, etc.) são marcados como **externals** em [app/webpack.common.ts](app/webpack.common.ts). [script/build.ts:copyDependencies](script/build.ts) filtra `app/package.json` por externals e roda `yarn install` em `out/` — só essas chegam no bundle final. Webpack não bundla, então `require('clang-format-node')` em `format-language.ts` é preservado e resolvido em runtime do `out/node_modules/`.
+
+Tools baixados (shfmt, ruff): [script/format-tools-download.ts](script/format-tools-download.ts) baixa o binário oficial do GitHub release para `app/vendor/format-tools/<plat-arch>/` no post-install. [script/build.ts](script/build.ts) copia esse diretório pra `out/vendor/format-tools/`. Em runtime resolve via `process.resourcesPath` (que aponta pra `<dist>/resources/`).
+
+Tools system-only (rustfmt, gofmt): nada bundled. `which()` resolve no PATH do usuário; ausente → skip silencioso.
+
+##### Patch do legal-eagle (via patch-package)
+
+`legal-eagle@0.16.0` faz `readFileSync` em qualquer entrada de `node_modules` cujo nome casa com `/(licen[sc]e|copying)/i` — incluindo **diretórios** como `@xml-tools/parser/LICENSES`. Isso quebra builds de produção com EISDIR.
+
+[`patches/legal-eagle+0.16.0.patch`](patches/legal-eagle+0.16.0.patch) gating `readIfExists` com `statSync(path).isFile()` e null-guard em `licenseFromText`. Aplicado cross-platform via `patch-package` em [`script/post-install.ts`](script/post-install.ts). Idempotente — `patch-package` reverse-checks antes de aplicar. Patches Linux-específicos (`patches/electron-installer-redhat+3.4.0.patch`) também passam pelo mesmo mecanismo.
 
 ### Testes
 

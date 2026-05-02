@@ -13,6 +13,7 @@ interface IAdvancedPreferencesProps {
   readonly useExternalCredentialHelper: boolean
   readonly repositoryIndicatorsEnabled: boolean
   readonly pullButtonDefaultAction: PullButtonDefaultAction
+  readonly formatOnCommit: boolean
   readonly onUseWindowsOpenSSHChanged: (checked: boolean) => void
   readonly onOptOutofReportingChanged: (checked: boolean) => void
   readonly onUseExternalCredentialHelperChanged: (checked: boolean) => void
@@ -20,6 +21,7 @@ interface IAdvancedPreferencesProps {
   readonly onPullButtonDefaultActionChanged: (
     action: PullButtonDefaultAction
   ) => void
+  readonly onFormatOnCommitChanged: (enabled: boolean) => void
 }
 
 interface IAdvancedPreferencesState {
@@ -85,6 +87,12 @@ export class Advanced extends React.Component<
     event: React.FormEvent<HTMLInputElement>
   ) => {
     this.props.onUseWindowsOpenSSHChanged(event.currentTarget.checked)
+  }
+
+  private onFormatOnCommitChanged = (
+    event: React.FormEvent<HTMLInputElement>
+  ) => {
+    this.props.onFormatOnCommitChanged(event.currentTarget.checked)
   }
 
   private reportDesktopUsageLabel() {
@@ -168,6 +176,34 @@ export class Advanced extends React.Component<
             }
             onChange={this.onReportingOptOutChanged}
           />
+        </div>
+        <div className="advanced-section">
+          <h2>Commits</h2>
+          <Checkbox
+            label="Auto-format files before commit"
+            value={
+              this.props.formatOnCommit ? CheckboxValue.On : CheckboxValue.Off
+            }
+            onChange={this.onFormatOnCommitChanged}
+            ariaDescribedBy="format-on-commit-description"
+          />
+          <div
+            id="format-on-commit-description"
+            className="git-settings-description"
+          >
+            <p>
+              When enabled, GitHub Desktop runs the matching code formatter
+              (Prettier, clang-format, StyLua, …) on the files you're about
+              to commit and stages the result. Only repos that ship a
+              formatter config of their own (e.g. <code>.prettierrc</code>,{' '}
+              <code>.clang-format</code>, <code>stylua.toml</code>) are
+              touched — projects without a config are left alone.
+            </p>
+            <p>
+              Whole-file formatting: any file the formatter rewrites will be
+              committed in full, ignoring partial line-by-line selections.
+            </p>
+          </div>
         </div>
         <h2>Network and credentials</h2>
         {this.renderSSHSettings()}

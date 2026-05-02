@@ -1,0 +1,4 @@
+#!/bin/sh
+# Auto-formats staged files via script/format-staged.mjs and re-stages them
+# so the commit lands already formatted. Bypass: `SKIP_FORMAT=1 git commit ...`.
+exec node script/format-staged.mjs

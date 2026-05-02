@@ -150,6 +150,7 @@ import {
   IFileListFilterState,
   isMergeConflictState,
   IMultiCommitOperationState,
+  ConflictState,
   IConstrainedValue,
   ICompareState,
   CommitOptions,
@@ -165,6 +166,7 @@ import {
 import { assertNever, fatalError, forceUnwrap } from '../fatal-error'
 
 import { formatCommitMessage } from '../format-commit-message'
+import { formatFilesInRepo } from '../format'
 import {
   getAccountForCommitMessageGeneration,
   getAccountForRepository,
@@ -279,6 +281,7 @@ import {
 import { ManualConflictResolution } from '../../models/manual-conflict-resolution'
 import { BranchPruner } from './helpers/branch-pruner'
 import {
+  enableCopilotConflictResolution,
   enableCopilotSdkCommitMessageGeneration,
   enableCustomIntegration,
 } from '../feature-flag'
@@ -307,7 +310,7 @@ import {
   isValidTutorialStep,
 } from '../../models/tutorial-step'
 import { OnboardingTutorialAssessor } from './helpers/tutorial-assessor'
-import { getUntrackedFiles } from '../status'
+import { getConflictedFiles, getUntrackedFiles } from '../status'
 import { isBranchPushable } from '../helpers/push-control'
 import {
   findAssociatedPullRequest,
@@ -384,6 +387,14 @@ import {
 import { updateStore } from '../../ui/lib/update-store'
 import { BypassReasonType } from '../../ui/secret-scanning/bypass-push-protection-dialog'
 import { getRepoHooks } from '../hooks/get-repo-hooks'
+import {
+  ICopilotConflictResolutionResponse,
+  IConflictResolutionProgress,
+} from '../copilot-conflict-resolution'
+import {
+  buildConflictContext,
+  gatherCommitContext,
+} from '../copilot-conflict-context'
 
 const LastSelectedRepositoryIDKey = 'last-selected-repository-id'
 
@@ -454,6 +465,9 @@ const hideWhitespaceInPullRequestDiffKey =
 
 const commitSpellcheckEnabledDefault = true
 const commitSpellcheckEnabledKey = 'commit-spellcheck-enabled'
+
+const formatOnCommitDefault = false
+const formatOnCommitKey = 'format-on-commit-enabled'
 
 export const tabSizeDefault: number = 4
 const tabSizeKey: string = 'tab-size'
@@ -529,6 +543,13 @@ const selectedCopilotModelsKey = 'selected-copilot-models'
 export const showChangesFilterDefault = true
 
 export class AppStore extends TypedBaseStore<IAppState> {
+  /** Auto-dismiss for floating notification toasts, in milliseconds. */
+  private static readonly NotificationToastDuration = 7_000
+
+  /** Monotonic counter feeding into toast ids — uniqueness in-process is
+   * the only requirement here, so a counter beats any randomness source. */
+  private static toastIdCounter = 0
+
   private readonly gitStoreCache: GitStoreCache
 
   private accounts: ReadonlyArray<Account> = new Array<Account>()
@@ -549,8 +570,6 @@ export class AppStore extends TypedBaseStore<IAppState> {
   private currentFoldout: Foldout | null = null
   private currentBanner: Banner | null = null
   private notificationToasts: ReadonlyArray<INotificationToast> = []
-  /** Auto-dismiss for floating notification toasts, in milliseconds. */
-  private static readonly NotificationToastDuration = 7_000
   private toastDismissTimers = new Map<string, NodeJS.Timeout>()
   private emitQueued = false
 
@@ -620,6 +639,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
     hideWhitespaceInPullRequestDiffDefault
   /** Whether or not the spellchecker is enabled for commit summary and description */
   private commitSpellcheckEnabled: boolean = commitSpellcheckEnabledDefault
+  /** Whether or not staged files are auto-formatted before each commit. */
+  private formatOnCommit: boolean = formatOnCommitDefault
   private showSideBySideDiff: boolean = ShowSideBySideDiffDefault
 
   private uncommittedChangesStrategy = defaultUncommittedChangesStrategy
@@ -1197,6 +1218,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       repositoryIndicatorsEnabled: this.repositoryIndicatorsEnabled,
       pullButtonDefaultAction: this.pullButtonDefaultAction,
       commitSpellcheckEnabled: this.commitSpellcheckEnabled,
+      formatOnCommit: this.formatOnCommit,
       currentDragElement: this.currentDragElement,
       lastThankYou: this.lastThankYou,
       useCustomEditor: this.useCustomEditor,
@@ -2417,6 +2439,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       commitSpellcheckEnabledKey,
       commitSpellcheckEnabledDefault
     )
+    this.formatOnCommit = getBoolean(formatOnCommitKey, formatOnCommitDefault)
     this.showSideBySideDiff = getShowSideBySideDiff()
 
     this.selectedTheme = getPersistedThemeName()
@@ -3427,9 +3450,59 @@ export class AppStore extends TypedBaseStore<IAppState> {
   ): Promise<boolean> {
     const state = this.repositoryStateCache.get(repository)
     const files = state.changesState.workingDirectory.files
-    const selectedFiles = files.filter(file => {
+    let selectedFiles = files.filter(file => {
       return file.selection.getSelectionType() !== DiffSelectionType.None
     })
+
+    // Auto-format-on-commit: rewrite the staged files in place using the
+    // matching tool (Prettier, clang-format, stylua, …) and force the
+    // committed selection to "include all" for any file we touched. The
+    // user opted into whole-file formatting via Preferences, so we don't
+    // try to preserve hunk-level selections after the rewrite.
+    if (this.formatOnCommit && selectedFiles.length > 0) {
+      // Deleted files are part of the commit but not on disk anymore — a
+      // CLI formatter handed a deleted path will return non-zero and that
+      // failure poisons the whole batch (see format-runner's chunking).
+      // Skip them upfront; they're committed as deletes regardless.
+      const formattablePaths = selectedFiles
+        .filter(f => f.status.kind !== AppFileStatusKind.Deleted)
+        .map(f => f.path)
+
+      if (formattablePaths.length > 0) {
+        try {
+          const result = await formatFilesInRepo(
+            repository.path,
+            formattablePaths
+          )
+          if (result.formatted.length > 0) {
+            const touched = new Set(result.formatted)
+            selectedFiles = selectedFiles.map(f =>
+              touched.has(f.path) ? f.withIncludeAll(true) : f
+            )
+          }
+        } catch (err) {
+          // formatFilesInRepo is supposed to never throw — every spawn /
+          // jsModule call is wrapped, and partial successes are returned
+          // in `result.formatted`. If it does throw we have NO list of
+          // touched files, which means some on-disk files may already have
+          // been rewritten while the in-memory `selectedFiles` selections
+          // still reference the pre-format content. Continuing with stale
+          // selections would produce a corrupt commit (line ranges no
+          // longer matching the file). Bail out of the auto-format step
+          // by re-staging EVERY file as include-all so whatever's on disk
+          // wins, then continue with the commit. Whole-file commits are
+          // the user's chosen contract for this feature anyway.
+          log.error(
+            '[format] formatFilesInRepo threw — re-staging all files as include-all to avoid stale selections',
+            err
+          )
+          const touched = new Set(formattablePaths)
+          selectedFiles = selectedFiles.map(f =>
+            touched.has(f.path) ? f.withIncludeAll(true) : f
+          )
+        }
+      }
+    }
 
     const gitStore = this.gitStoreCache.get(repository)
 
@@ -3945,6 +4018,17 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     setBoolean(commitSpellcheckEnabledKey, commitSpellcheckEnabled)
     this.commitSpellcheckEnabled = commitSpellcheckEnabled
+
+    this.emitUpdate()
+  }
+
+  public _setFormatOnCommit(formatOnCommit: boolean) {
+    if (this.formatOnCommit === formatOnCommit) {
+      return
+    }
+
+    setBoolean(formatOnCommitKey, formatOnCommit)
+    this.formatOnCommit = formatOnCommit
 
     this.emitUpdate()
   }
@@ -5822,6 +5906,134 @@ export class AppStore extends TypedBaseStore<IAppState> {
   }
 
   /**
+   * Extract display labels and git refs for both sides of a conflict.
+   */
+  private async getConflictLabelsAndRefs(
+    repository: Repository,
+    conflictState: ConflictState,
+    multiCommitOperationState: IMultiCommitOperationState | null
+  ): Promise<{
+    readonly ourLabel: string
+    readonly theirLabel: string
+    readonly ourRef: string | undefined
+    readonly theirRef: string | undefined
+  }> {
+    if (isMergeConflictState(conflictState)) {
+      const theirBranch = await this.getMergeConflictsTheirBranch(
+        repository,
+        false,
+        multiCommitOperationState
+      )
+      return {
+        ourLabel: conflictState.currentBranch,
+        ourRef: conflictState.currentBranch,
+        theirLabel: theirBranch ?? 'incoming branch',
+        theirRef: theirBranch,
+      }
+    }
+
+    if (isRebaseConflictState(conflictState)) {
+      return {
+        ourLabel: conflictState.baseBranch ?? 'current branch',
+        ourRef: conflictState.baseBranch,
+        theirLabel: conflictState.targetBranch,
+        theirRef: conflictState.targetBranch,
+      }
+    }
+
+    if (isCherryPickConflictState(conflictState)) {
+      const sourceBranch =
+        multiCommitOperationState !== null &&
+        multiCommitOperationState.operationDetail.kind ===
+          MultiCommitOperationKind.CherryPick &&
+        multiCommitOperationState.operationDetail.sourceBranch !== null
+          ? multiCommitOperationState.operationDetail.sourceBranch.name
+          : undefined
+
+      return {
+        ourLabel: conflictState.targetBranchName,
+        ourRef: conflictState.targetBranchName,
+        theirLabel: sourceBranch ?? 'cherry-picked commit',
+        theirRef: sourceBranch,
+      }
+    }
+
+    return assertNever(conflictState, 'Unsupported conflict kind')
+  }
+
+  /** This shouldn't be called directly. See 'Dispatcher'. */
+  public async _resolveConflictsWithCopilot(
+    repository: Repository,
+    onProgress?: (progress: IConflictResolutionProgress) => void
+  ): Promise<ICopilotConflictResolutionResponse | null> {
+    if (!enableCopilotConflictResolution()) {
+      return null
+    }
+
+    try {
+      const state = this.repositoryStateCache.get(repository)
+      const { conflictState } = state.changesState
+
+      if (conflictState === null) {
+        log.warn(
+          'AppStore: resolveConflictsWithCopilot called with no active conflict state'
+        )
+        return null
+      }
+
+      const labels = await this.getConflictLabelsAndRefs(
+        repository,
+        conflictState,
+        state.multiCommitOperationState
+      )
+
+      const conflictedFiles = getConflictedFiles(
+        state.changesState.workingDirectory,
+        conflictState.manualResolutions
+      )
+
+      if (conflictedFiles.length === 0) {
+        log.warn(
+          'AppStore: resolveConflictsWithCopilot called with no conflicted files'
+        )
+        return null
+      }
+
+      const context = await buildConflictContext(
+        labels.ourLabel,
+        labels.theirLabel,
+        repository.path,
+        conflictedFiles
+      )
+
+      // Best-effort enrichment — never block resolution on these
+      const commitContext =
+        labels.ourRef && labels.theirRef
+          ? await gatherCommitContext(
+              repository,
+              labels.ourRef,
+              labels.theirRef
+            ).catch(() => null)
+          : null
+
+      const currentPullRequest = state.branchesState.currentPullRequest ?? null
+
+      const result = await this.copilotStore.resolveConflicts(
+        context,
+        commitContext,
+        currentPullRequest,
+        repository.path,
+        onProgress
+      )
+
+      return result
+    } catch (e) {
+      log.warn('AppStore: Copilot conflict resolution failed', e)
+      return null
+    }
+  }
+
+  /**
    * Set the global application menu.
    *
    * This is called in response to the main process emitting an event signalling
@@ -6468,7 +6680,12 @@ export class AppStore extends TypedBaseStore<IAppState> {
    * id so callers can dismiss it earlier if needed.
    */
   public _pushNotificationToast(toast: Omit<INotificationToast, 'id'>): string {
-    const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    // Toast ids only need to be unique within the running process — they
+    // map a toast in the UI to its dismiss timer, never travel anywhere.
+    // A monotonic counter is correct here and avoids the eslint
+    // `insecure-random` rule that flags `Math.random` even though the
+    // randomness was decorative.
+    const id = `toast-${Date.now()}-${++AppStore.toastIdCounter}`
     const newToast: INotificationToast = { id, ...toast }
     this.notificationToasts = [newToast, ...this.notificationToasts]
 
