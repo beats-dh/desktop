@@ -144,27 +144,41 @@ export async function getChangeLog(
   // get the most recent 100).
   url.searchParams.set('per_page', String(Math.min(limit ?? 30, 100)))
 
-  const response = await fetch(url.toString(), {
-    headers: {
-      'user-agent': getUserAgent(),
-      accept: 'application/vnd.github+json',
-    },
-  })
-  if (!response.ok) {
+  // Network errors, DNS failures, malformed JSON, and rate-limit responses
+  // (which return a JSON object, not the expected array) all need to come
+  // out as `[]` rather than throwing — the `onUpdateNotAvailable` IPC
+  // handler awaits this and a rejected promise leaves the UI stuck on
+  // "Checking for updates…".
+  try {
+    const response = await fetch(url.toString(), {
+      headers: {
+        'user-agent': getUserAgent(),
+        accept: 'application/vnd.github+json',
+      },
+    })
+    if (!response.ok) {
+      return []
+    }
+    const payload: unknown = await response.json()
+    if (!Array.isArray(payload)) {
+      return []
+    }
+    const releases = payload as ReadonlyArray<GitHubRelease>
+    const includePrereleases =
+      __RELEASE_CHANNEL__ === 'beta' || __RELEASE_CHANNEL__ === 'test'
+
+    return releases
+      .filter(r => !r.draft && (includePrereleases || !r.prerelease))
+      .map<ReleaseMetadata>(r => ({
+        name: r.name ?? r.tag_name,
+        notes: parseReleaseBodyToNotes(r.body ?? ''),
+        pub_date: r.published_at ?? new Date(0).toISOString(),
+        version: cleanVersion(r.tag_name),
+      }))
+  } catch (e) {
+    log.error('[ReleaseNotes] failed to fetch changelog from GitHub', e)
     return []
   }
-  const releases: ReadonlyArray<GitHubRelease> = await response.json()
-  const includePrereleases =
-    __RELEASE_CHANNEL__ === 'beta' || __RELEASE_CHANNEL__ === 'test'
-
-  return releases
-    .filter(r => !r.draft && (includePrereleases || !r.prerelease))
-    .map<ReleaseMetadata>(r => ({
-      name: r.name ?? r.tag_name,
-      notes: parseReleaseBodyToNotes(r.body ?? ''),
-      pub_date: r.published_at ?? new Date(0).toISOString(),
-      version: cleanVersion(r.tag_name),
-    }))
 }
 
 export async function generateReleaseSummary(
