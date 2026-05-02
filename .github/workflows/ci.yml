@@ -7,7 +7,8 @@ on:
       - linux
       - 'linux-release-*'
     tags:
-      - 'release-*.*.*-linux*'
+      - 'release-*.*.*'
+      - 'release-*.*.*-*'
   pull_request:
     branches:
       - linux
