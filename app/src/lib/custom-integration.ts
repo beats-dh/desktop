@@ -73,6 +73,12 @@ async function getAppBundleID(path: string) {
  * the file. `string-argv` already strips any quotes the user wrote around the
  * placeholder when parsing the saved arguments string.
  *
+ * The replacement is provided as a function (not a plain string) so that any
+ * `$&`, `$$`, `` $` ``, `$'`, or `$<name>` sequences inside `repoPath` are
+ * inserted literally instead of being interpreted by `replaceAll` as
+ * substitution patterns. Repos cloned to paths containing `$` characters
+ * are rare but valid on every platform we ship.
+ *
  * @param args The custom integration arguments
  * @param repoPath The target path to replace the placeholder with
  */
@@ -80,7 +86,7 @@ export function expandTargetPathArgument(
   args: ReadonlyArray<string>,
   repoPath: string
 ): ReadonlyArray<string> {
-  return args.map(arg => arg.replaceAll(TargetPathArgument, repoPath))
+  return args.map(arg => arg.replaceAll(TargetPathArgument, () => repoPath))
 }
 
 /**
