@@ -65,6 +65,18 @@
       }
     }
   }
+
+  // When an unpushed branch is also the selected row, fall back to the
+  // list's selected-text color so the orange warning tint doesn't fight
+  // the selection background (which would drop contrast, especially in
+  // dark theme). The italic name + the still-orange icon-on-hover trail
+  // continue to mark the row as unpushed.
+  .list-item.selected .branches-list-item.unpushed {
+    .icon,
+    .name {
+      color: var(--box-selected-text-color);
+    }
+  }
 }
 
 .branches-container-panel {
