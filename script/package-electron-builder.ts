@@ -65,7 +65,10 @@ export async function packageElectronBuilder(): Promise<Array<string>> {
   await runElectronBuilder()
 
   const distRoot = getDistRoot()
-  const appImageInstaller = `${distRoot}/GitHubDesktop-linux-*.AppImage`
+  const appImageInstaller = path.join(
+    distRoot,
+    'GitHubDesktop-linux-*.AppImage'
+  )
 
   const files = await globPromise(appImageInstaller)
   if (files.length !== 1) {
@@ -83,12 +86,15 @@ export async function packageElectronBuilder(): Promise<Array<string>> {
 //   - `GitHubDesktopSetup-<arch>-<version>.exe`  (NSIS installer)
 //   - `latest.yml`                                (electron-updater manifest)
 // plus a few helper files (block maps, etc.) we don't need to surface.
+// Both files are required by the release pipeline — the manifest is what
+// `electron-updater` clients fetch to discover updates, so failing the
+// build here is much louder than failing the publish job later.
 export async function packageWindowsElectronBuilder(): Promise<Array<string>> {
   await runElectronBuilder()
 
   const distRoot = getDistRoot()
-  const installerGlob = `${distRoot}/GitHubDesktopSetup-*.exe`
-  const manifestGlob = `${distRoot}/latest*.yml`
+  const installerGlob = path.join(distRoot, 'GitHubDesktopSetup-*.exe')
+  const manifestGlob = path.join(distRoot, 'latest*.yml')
 
   const installers = await globPromise(installerGlob)
   if (installers.length === 0) {
@@ -97,6 +103,11 @@ export async function packageWindowsElectronBuilder(): Promise<Array<string>> {
     )
   }
   const manifests = await globPromise(manifestGlob)
+  if (manifests.length === 0) {
+    return Promise.reject(
+      `No electron-updater manifest found at '${manifestGlob}' after electron-builder run.`
+    )
+  }
 
   return [...installers, ...manifests]
 }

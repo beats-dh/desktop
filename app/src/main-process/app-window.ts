@@ -6,25 +6,7 @@ import {
   autoUpdater as electronAutoUpdater,
   nativeTheme,
 } from 'electron'
-// On Windows we use `electron-updater`'s NSIS-aware updater because the
-// native `electron.autoUpdater` only supports Squirrel.Windows, and its
-// feed format (`<feedURL>/RELEASES`) is not what update.electronjs.org
-// serves. macOS keeps using the native autoUpdater + update.electronjs.org
-// — Squirrel.Mac works fine there. Both expose the same event names and
-// methods we care about (`on`, `setFeedURL`, `checkForUpdates`,
-// `quitAndInstall`), so we use a minimal structural type that fits both.
 import { autoUpdater as nsisAutoUpdater } from 'electron-updater'
-
-type CommonUpdater = {
-  on(event: string, listener: (...args: any[]) => void): unknown
-  removeAllListeners(): unknown
-  setFeedURL(options: any): void
-  checkForUpdates(): void | Promise<unknown>
-  quitAndInstall(): void
-}
-
-const autoUpdater: CommonUpdater =
-  process.platform === 'win32' ? nsisAutoUpdater : electronAutoUpdater
 import { shell } from '../lib/app-shell'
 import { Emitter, Disposable } from 'event-kit'
 import { join } from 'path'
@@ -49,6 +31,32 @@ import {
 import { addTrustedIPCSender } from './trusted-ipc-sender'
 import { getUpdaterGUID } from '../lib/get-updater-guid'
 import { CLIAction } from '../lib/cli-action'
+
+// On Windows we use `electron-updater`'s NSIS-aware updater because the
+// native `electron.autoUpdater` only supports Squirrel.Windows, and its
+// feed format (`<feedURL>/RELEASES`) is not what update.electronjs.org
+// serves. macOS keeps using the native autoUpdater + update.electronjs.org
+// — Squirrel.Mac works fine there. Both expose the same event names and
+// methods we care about (`on`, `setFeedURL`, `checkForUpdates`,
+// `quitAndInstall`), so we use a minimal structural type that fits both.
+type CommonUpdater = {
+  on(event: string, listener: (...args: any[]) => void): unknown
+  removeAllListeners(): unknown
+  setFeedURL(options: any): void
+  checkForUpdates(): void | Promise<unknown>
+  quitAndInstall(): void
+}
+
+const autoUpdater: CommonUpdater = __WIN32__
+  ? nsisAutoUpdater
+  : electronAutoUpdater
+
+// GitHub Releases coordinates for `electron-updater`'s github provider on
+// Windows. Centralised so a future repo rename touches one line; the
+// changelog fetcher in `app/src/lib/release-notes.ts` keeps its own copy
+// because that path lives in the renderer (no shared module).
+const GITHUB_UPDATE_OWNER = 'beats-dh'
+const GITHUB_UPDATE_REPO = 'desktop'
 
 export class AppWindow {
   private window: Electron.BrowserWindow
@@ -472,20 +480,25 @@ export class AppWindow {
 
   public async checkForUpdates(url: string) {
     try {
-      if (process.platform === 'win32') {
+      if (__WIN32__) {
         // electron-updater reads `app-update.yml` (shipped by electron-
         // builder when `publish` is configured), but we set the provider
         // explicitly so the YAML isn't a hard requirement and the source
         // of truth stays in code.
         autoUpdater.setFeedURL({
           provider: 'github',
-          owner: 'beats-dh',
-          repo: 'desktop',
+          owner: GITHUB_UPDATE_OWNER,
+          repo: GITHUB_UPDATE_REPO,
         })
       } else {
         autoUpdater.setFeedURL({ url: await trySetUpdaterGuid(url) })
       }
-      autoUpdater.checkForUpdates()
+      // electron-updater's `checkForUpdates` returns a Promise that can
+      // reject asynchronously (network error, missing manifest, etc.).
+      // The native Electron implementation is fire-and-forget, but
+      // awaiting a `void` is harmless — both paths land here so we can
+      // catch async rejections in the same try/catch.
+      await autoUpdater.checkForUpdates()
     } catch (e) {
       return e
     }
