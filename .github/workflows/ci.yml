@@ -151,7 +151,7 @@ jobs:
         # so the gate is removed. macOS produces a `.zip` per arch (now built
         # by electron-builder), Windows produces an NSIS `.exe` plus the
         # `latest.yml` manifest that `electron-updater` reads.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{matrix.friendlyName}}-${{matrix.arch}}
           path: |
@@ -273,7 +273,7 @@ jobs:
         run: yarn test:e2e:run:packaged
       - name: Upload E2E artifacts
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-${{matrix.friendlyName}}-${{matrix.arch}}
           path: playwright-videos/**
