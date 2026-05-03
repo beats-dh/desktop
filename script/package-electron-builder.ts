@@ -24,21 +24,16 @@ function getArchitecture() {
 async function runElectronBuilder(): Promise<void> {
   const distPath = getDistPath()
 
-  // On Windows the `.bin/electron-builder` shim is a `.cmd` batch file;
-  // `spawnSync` won't auto-append the extension, so resolve directly.
-  const isWindows = process.platform === 'win32'
-  const binName = isWindows ? 'electron-builder.cmd' : 'electron-builder'
-  const electronBuilder = path.resolve(
-    __dirname,
-    '..',
-    'node_modules',
-    '.bin',
-    binName
-  )
+  // Skip the .cmd/.sh shim under `node_modules/.bin/` and run electron-
+  // builder's CLI entry point directly with `node`. Cross-platform, no
+  // `shell: true` (which trips the DEP0190 warning), no Windows-specific
+  // `.cmd` resolution.
+  const electronBuilderCli = require.resolve('electron-builder/out/cli/cli')
 
   const configPath = path.resolve(__dirname, 'electron-builder.yml')
 
   const args = [
+    electronBuilderCli,
     'build',
     '--prepackaged',
     distPath,
@@ -54,10 +49,8 @@ async function runElectronBuilder(): Promise<void> {
     'never',
   ]
 
-  const { error, status } = cp.spawnSync(electronBuilder, args, {
+  const { error, status } = cp.spawnSync(process.execPath, args, {
     stdio: 'inherit',
-    // `.cmd` shims need a shell on Windows; harmless elsewhere.
-    shell: isWindows,
   })
 
   if (error != null) {

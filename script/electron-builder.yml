@@ -35,14 +35,13 @@ win:
         - x64
         - arm64
   icon: 'app/static/logos/prod/icon-logo.ico'
-  publisherName: 'GitHub, Inc.'
-  # Azure Trusted Signing (formerly ACS). CI installs the signing client
-  # and signs in via OIDC before the package step runs; the values below
-  # match the upstream GitHub deployment so existing certs keep working.
-  azureSignOptions:
-    endpoint: 'https://wus3.codesigning.azure.net/'
-    codeSigningAccountName: 'GitHubInc'
-    certificateProfileName: 'GitHubInc'
+  publisherName: 'beats-dh'
+  # NOTE: code signing intentionally not configured here — the fork
+  # does not have its own Azure Trusted Signing tenant set up yet, and
+  # leaving an `azureSignOptions` block in place fails the build on
+  # missing AZURE_TENANT_ID. SmartScreen will warn users on first launch
+  # of an unsigned installer; configure signing here when the fork has
+  # an EV cert or its own ACS tenant.
 
 nsis:
   oneClick: false
