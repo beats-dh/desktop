@@ -1,0 +1,61 @@
+artifactName: 'GitHubDesktop-${os}-${arch}-${version}.${ext}'
+
+# `electron-updater` reads provider config from this block when generating
+# `latest.yml` / `latest-mac.yml` files. The renderer also calls
+# `setFeedURL({ provider: 'github', owner, repo })` explicitly so the app
+# doesn't depend on the YAML being shipped, but having it here keeps the
+# generated metadata pointing at the right place.
+publish:
+  - provider: github
+    owner: beats-dh
+    repo: desktop
+
+linux:
+  category: 'GNOME;GTK;Development'
+  packageCategory: 'GNOME;GTK;Development'
+  icon: 'app/static/linux/logos'
+  mimeTypes:
+    - x-scheme-handler/x-github-client
+    - x-scheme-handler/x-github-desktop-auth
+    # workaround for handling OAuth flow until we figure out what we're doing
+    # With the development OAuth details
+    # see https://github.com/shiftkey/desktop/issues/72 for more details
+    - x-scheme-handler/x-github-desktop-dev-auth
+  target:
+    - AppImage
+  maintainer: 'Brendan Forster<github@brendanforster.com>'
+
+# Windows packaging via NSIS so `electron-updater` has a supported install
+# format on this platform — Squirrel.Windows (the default of
+# `electron-winstaller`) is not in electron-updater's supported list.
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - arm64
+  icon: 'app/static/logos/prod/icon-logo.ico'
+  publisherName: 'beats-dh'
+  # NOTE: code signing intentionally not configured here — the fork
+  # does not have its own Azure Trusted Signing tenant set up yet, and
+  # leaving an `azureSignOptions` block in place fails the build on
+  # missing AZURE_TENANT_ID. SmartScreen will warn users on first launch
+  # of an unsigned installer; configure signing here when the fork has
+  # an EV cert or its own ACS tenant.
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  artifactName: 'GitHubDesktopSetup-${arch}-${version}.${ext}'
+  shortcutName: 'GitHub Desktop'
+
+mac:
+  target:
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  category: 'public.app-category.developer-tools'
+  artifactName: 'GitHubDesktop-${os}-${arch}-${version}.${ext}'

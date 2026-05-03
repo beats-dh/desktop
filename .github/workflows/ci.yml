@@ -147,19 +147,17 @@ jobs:
       - name: Upload artifacts
         # Upstream gates this on `inputs.upload-artifacts` (only `true` when
         # the workflow is invoked via `workflow_call` from an external release
-        # workflow). The Linux fork wants the artifacts available on every
-        # push/PR — same behavior as `ci-linux.yml` for `.deb`/`.rpm`/
-        # `.AppImage` — so the fork removes the gate. The macOS run finds the
-        # `.zip` + `bundle-size.json`, the Windows run finds all five paths;
-        # `if-no-files-found: error` only fires when zero paths match.
+        # workflow). The fork wants the artifacts available on every push/PR
+        # so the gate is removed. macOS produces a `.zip` per arch (now built
+        # by electron-builder), Windows produces an NSIS `.exe` plus the
+        # `latest.yml` manifest that `electron-updater` reads.
         uses: actions/upload-artifact@v4
         with:
           name: ${{matrix.friendlyName}}-${{matrix.arch}}
           path: |
-            dist/GitHub Desktop-${{matrix.arch}}.zip
-            dist/GitHubDesktop-*.nupkg
-            dist/GitHubDesktopSetup-${{matrix.arch}}.exe
-            dist/GitHubDesktopSetup-${{matrix.arch}}.msi
+            dist/GitHubDesktop-mac-${{matrix.arch}}-*.zip
+            dist/GitHubDesktopSetup-${{matrix.arch}}-*.exe
+            dist/latest*.yml
             dist/bundle-size.json
           if-no-files-found: error
   e2e-smoke:
@@ -233,46 +231,41 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          function Write-SquirrelLogs {
-            $logPaths = @(
-              "$env:LOCALAPPDATA\SquirrelSetup.log",
-              "$env:LOCALAPPDATA\GitHubDesktop\SquirrelSetup.log"
-            )
+          # NSIS installer name now includes the version
+          # (`electron-builder.yml` → `nsis.artifactName`), so glob it
+          # rather than hard-coding the suffix.
+          $setupExe = Get-ChildItem "dist/GitHubDesktopSetup-${{ matrix.arch }}-*.exe" |
+            Select-Object -First 1 -ExpandProperty FullName
 
-            foreach ($logPath in $logPaths) {
-              if (Test-Path $logPath) {
-                Write-Host "Showing log: $logPath"
-                Get-Content $logPath -Tail 200
-              }
-            }
+          if (-not $setupExe) {
+            throw "No NSIS installer found at dist/GitHubDesktopSetup-${{ matrix.arch }}-*.exe"
           }
 
-          $setupExe = "dist/GitHubDesktopSetup-${{ matrix.arch }}.exe"
           $installer = Start-Process -FilePath $setupExe -ArgumentList "/S" -PassThru
-
           try {
             Wait-Process -Id $installer.Id -Timeout 300 -ErrorAction Stop
           } catch {
-            Write-SquirrelLogs
             throw "Windows installer timed out after 300 seconds"
           }
 
           Get-Process GitHubDesktop -ErrorAction SilentlyContinue | Stop-Process -Force
 
-          $installedExe = $null
-          for ($attempt = 0; $attempt -lt 30 -and -not $installedExe; $attempt++) {
-            $installedExe = Get-ChildItem "$env:LOCALAPPDATA\GitHubDesktop\app-*\GitHubDesktop.exe" -ErrorAction SilentlyContinue |
-              Sort-Object FullName -Descending |
-              Select-Object -First 1 -ExpandProperty FullName
+          # electron-builder NSIS with `oneClick: false` + `perMachine: false`
+          # installs to `%LOCALAPPDATA%\Programs\<productName>\`. The main
+          # exe keeps the name electron-packager produced earlier
+          # (`GitHubDesktop.exe`, no space), set via `getExecutableName()`
+          # in script/build.ts.
+          $installedExe = "$env:LOCALAPPDATA\Programs\GitHub Desktop\GitHubDesktop.exe"
 
-            if (-not $installedExe) {
-              Start-Sleep -Seconds 2
-            }
+          if (-not (Test-Path $installedExe)) {
+            # Fall back to a recursive search inside the install root in
+            # case electron-builder ever changes the layout.
+            $installedExe = Get-ChildItem "$env:LOCALAPPDATA\Programs\GitHub Desktop" -Recurse -Filter "GitHubDesktop.exe" -ErrorAction SilentlyContinue |
+              Select-Object -First 1 -ExpandProperty FullName
           }
 
-          if (-not $installedExe) {
-            Write-SquirrelLogs
-            throw "Unable to locate installed GitHub Desktop executable"
+          if (-not $installedExe -or -not (Test-Path $installedExe)) {
+            throw "Unable to locate installed GitHub Desktop executable under $env:LOCALAPPDATA\Programs\GitHub Desktop"
           }
 
           Add-Content -Path $env:GITHUB_ENV -Value "DESKTOP_E2E_APP_PATH=$installedExe"

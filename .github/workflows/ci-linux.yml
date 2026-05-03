@@ -218,9 +218,8 @@ jobs:
             artifacts/**/*.rpm
             artifacts/**/*.sha256
             artifacts/**/*.exe
-            artifacts/**/*.msi
-            artifacts/**/*.nupkg
             artifacts/**/*.zip
+            artifacts/**/latest*.yml
           draft: true
           fail_on_unmatched_files: false
         env:
