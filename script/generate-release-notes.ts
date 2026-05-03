@@ -139,10 +139,22 @@ function getReleaseGroups(version: string): ReleaseNotesGroups {
     releases[upstreamVersion]
 
   if (!changelogForVersion) {
-    console.error(
-      `🔴 Changelog version ${upstreamVersion} not found in changelog.json, which is required for publishing a release based off an upstream releease. Aborting...`
+    // Upstream's flow seeded `changelog.json` per release and treated a
+    // missing entry as a hard failure. The fork edits the GitHub Release
+    // body by hand on the web, so missing entries are common and shouldn't
+    // block the publish job — emit empty groups (the action-gh-release
+    // step posts a near-empty body that the maintainer fills in
+    // afterwards).
+    console.warn(
+      `⚠️ No changelog.json entry for ${upstreamVersion}; release body will be empty until edited.`
     )
-    process.exit(1)
+    return {
+      new: [],
+      added: [],
+      fixed: [],
+      improved: [],
+      removed: [],
+    }
   }
 
   console.log(`found release notes`, changelogForVersion)
