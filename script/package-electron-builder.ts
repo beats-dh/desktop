@@ -61,14 +61,20 @@ async function runElectronBuilder(): Promise<void> {
   }
 }
 
+// Builds a glob pattern rooted at `distRoot`. `path.join` would be wrong
+// here: on Windows it emits backslashes, which `minimatch` (used by
+// `glob`) interprets as escape characters rather than path separators —
+// the pattern would silently match nothing. Forward slashes work on
+// every platform glob runs on.
+function distGlob(distRoot: string, pattern: string): string {
+  return path.join(distRoot, pattern).split(path.sep).join('/')
+}
+
 export async function packageElectronBuilder(): Promise<Array<string>> {
   await runElectronBuilder()
 
   const distRoot = getDistRoot()
-  const appImageInstaller = path.join(
-    distRoot,
-    'GitHubDesktop-linux-*.AppImage'
-  )
+  const appImageInstaller = distGlob(distRoot, 'GitHubDesktop-linux-*.AppImage')
 
   const files = await globPromise(appImageInstaller)
   if (files.length !== 1) {
@@ -93,8 +99,8 @@ export async function packageWindowsElectronBuilder(): Promise<Array<string>> {
   await runElectronBuilder()
 
   const distRoot = getDistRoot()
-  const installerGlob = path.join(distRoot, 'GitHubDesktopSetup-*.exe')
-  const manifestGlob = path.join(distRoot, 'latest*.yml')
+  const installerGlob = distGlob(distRoot, 'GitHubDesktopSetup-*.exe')
+  const manifestGlob = distGlob(distRoot, 'latest*.yml')
 
   const installers = await globPromise(installerGlob)
   if (installers.length === 0) {
