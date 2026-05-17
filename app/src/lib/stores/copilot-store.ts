@@ -1,11 +1,17 @@
-import { CopilotClient } from '@github/copilot-sdk'
-import type { ModelInfo, SessionConfig } from '@github/copilot-sdk'
+import { CopilotClient, CopilotSession } from '@github/copilot-sdk'
+import type {
+  AssistantMessageEvent,
+  MessageOptions,
+  ModelInfo,
+  SessionConfig,
+} from '@github/copilot-sdk'
 import { AccountsStore } from './accounts-store'
 import { Account, isDotComAccount } from '../../models/account'
 import {
   ICopilotCommitMessage,
   parseCopilotCommitMessage,
 } from '../copilot-commit-message'
+import { getCopilotPaymentRequiredErrorFromSessionError } from '../copilot-error'
 import {
   CopilotValidationError,
   ConflictResolutionSystemPrompt,
@@ -392,10 +398,8 @@ export class CopilotStore extends BaseStore {
       // Proactively fetch models so they are ready when the user opens the
       // Copilot tab in Settings, even if they signed in without reopening
       // the dialog.
-      this.getCachedModels().then(
-        () => this.emitUpdate(),
-        () => this.emitUpdate()
-      )
+      const emit = () => this.emitUpdate()
+      this.getCachedModels().then(emit, emit)
     }
   }
 
@@ -435,7 +439,7 @@ export class CopilotStore extends BaseStore {
       },
       cwd: repositoryPath,
       autoStart: true,
-      githubToken: this.currentAccount.token,
+      gitHubToken: this.currentAccount.token,
     })
   }
 
@@ -447,6 +451,48 @@ export class CopilotStore extends BaseStore {
       await client.stop()
     } catch (e) {
       log.error('CopilotStore: Error stopping client', e)
+    }
+  }
+
+  /**
+   * Sends a prompt on the given session and waits for the assistant
+   * response, while capturing any `session.error` events emitted during
+   * the round-trip.
+   *
+   * If the SDK emits a `session.error` whose upstream HTTP status code is
+   * 402 (Payment Required), the corresponding `CopilotError` is thrown
+   * instead of whatever {@link CopilotSession.sendAndWait} would have
+   * rejected with — the underlying rejection is intentionally swallowed
+   * because the SDK surfaces the same failure twice (once on the event
+   * channel, once on the awaited promise) and only the parsed 402 error
+   * carries actionable billing metadata for the UI.
+   *
+   * Any other `session.error` event is logged and otherwise ignored so
+   * the original `sendAndWait` rejection (or success) is propagated
+   * unchanged.
+   */
+  private async sendAndWait(
+    session: CopilotSession,
+    options: MessageOptions,
+    timeoutMs: number
+  ): Promise<AssistantMessageEvent | undefined> {
+    let paymentRequiredError: Error | undefined
+
+    const unsubscribe = session.on('session.error', e => {
+      const captured = getCopilotPaymentRequiredErrorFromSessionError(e.data)
+      if (captured !== null) {
+        paymentRequiredError = captured
+      } else {
+        log.error(`CopilotStore: Session error: ${e.toString()}`)
+      }
+    })
+
+    try {
+      return await session.sendAndWait(options, timeoutMs)
+    } catch (e) {
+      throw paymentRequiredError ?? e
+    } finally {
+      unsubscribe()
     }
   }
 
@@ -527,7 +573,7 @@ export class CopilotStore extends BaseStore {
         },
         availableTools: [],
         onPermissionRequest: async () => ({
-          kind: 'denied-interactively-by-user',
+          kind: 'reject',
         }),
       })
 
@@ -540,7 +586,9 @@ export class CopilotStore extends BaseStore {
         tags,
         cleanedRuleDescriptions
       )
-      const response = await session.sendAndWait(
+
+      const response = await this.sendAndWait(
+        session,
         { prompt: userPrompt },
         timeoutMs
       )
@@ -698,11 +746,11 @@ export class CopilotStore extends BaseStore {
             content: ConflictResolutionSystemPrompt,
           },
           onPermissionRequest: async () => ({
-            kind: 'denied-interactively-by-user',
+            kind: 'reject',
           }),
         })
 
-        const response = await session.sendAndWait({ prompt }, 600_000)
+        const response = await this.sendAndWait(session, { prompt }, 600_000)
 
         if (!response || !response.data.content) {
           throw new Error('No response from Copilot')

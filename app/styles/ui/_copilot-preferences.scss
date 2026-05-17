@@ -92,11 +92,22 @@
       flex-shrink: 0;
     }
   }
+
+  .copilot-feature-hint {
+    p {
+      margin: 0;
+    }
+  }
 }
 
 #edit-copilot-byok-provider {
   // Tighter than the default dialog so the four sections fit nicely.
   --copilot-byok-section-gap: var(--spacing);
+
+  .dialog-content {
+    max-height: calc(100vh - 200px);
+    overflow-y: auto;
+  }
 
   .copilot-byok-fieldset {
     border: none;
