@@ -27,6 +27,7 @@ import { ISecretScanResult } from '../ui/secret-scanning/push-protection-error-d
 import { BypassReasonType } from '../ui/secret-scanning/bypass-push-protection-dialog'
 import { TerminalOutput, TerminalOutputListener } from '../lib/git'
 import type { IBYOKModel, IBYOKProvider } from '../lib/copilot/byok'
+import { WorktreeEntry } from './worktree'
 
 export enum PopupType {
   RenameBranch = 'RenameBranch',
@@ -106,12 +107,18 @@ export enum PopupType {
   BypassPushProtection = 'BypassPushProtection',
   GenerateCommitMessageOverrideWarning = 'GenerateCommitMessageOverrideWarning',
   GenerateCommitMessageDisclaimer = 'GenerateCommitMessageDisclaimer',
+  CopilotConflictResolutionDisclaimer = 'CopilotConflictResolutionDisclaimer',
   HookFailed = 'HookFailed',
   CommitProgress = 'CommitProgress',
+  AddWorktree = 'AddWorktree',
+  RenameWorktree = 'RenameWorktree',
+  DeleteWorktree = 'DeleteWorktree',
   EditCopilotBYOKProvider = 'EditCopilotBYOKProvider',
   EditCopilotBYOKModel = 'EditCopilotBYOKModel',
   ConfirmDeleteCopilotBYOKProvider = 'ConfirmDeleteCopilotBYOKProvider',
   ConfirmRestart = 'ConfirmRestart',
+  CopilotConflictResolutionAlwaysNudge = 'CopilotConflictResolutionAlwaysNudge',
+  DeleteWorktreeFailed = 'DeleteWorktreeFailed',
 }
 
 interface IBasePopup {
@@ -489,6 +496,14 @@ export type PopupDetail =
       filesSelected: ReadonlyArray<WorkingDirectoryFileChange>
     }
   | {
+      type: PopupType.CopilotConflictResolutionDisclaimer
+      repository: Repository
+    }
+  | {
+      type: PopupType.CopilotConflictResolutionAlwaysNudge
+      repository: Repository
+    }
+  | {
       type: PopupType.HookFailed
       hookName: string
       terminalOutput: TerminalOutput
@@ -500,5 +515,28 @@ export type PopupDetail =
     }
   | {
       type: PopupType.ConfirmRestart
+    }
+  | {
+      type: PopupType.AddWorktree
+      repository: Repository
+      initialBranchName?: string
+      initialWorktreeName?: string
+    }
+  | {
+      type: PopupType.RenameWorktree
+      repository: Repository
+      worktreePath: string
+    }
+  | {
+      type: PopupType.DeleteWorktree
+      repository: Repository
+      worktreePath: string
+    }
+  | {
+      type: PopupType.DeleteWorktreeFailed
+      repository: Repository
+      worktreePath: string
+      error: Error
+      originalWorktree: WorktreeEntry | null
     }
 export type Popup = IBasePopup & PopupDetail

@@ -167,6 +167,18 @@ findYarnVersion(path => {
 
   // (Patches in patches/ are applied above by patch-package, cross-platform.)
 
+  // Electron >= 42 no longer downloads its prebuilt binary in its own
+  // postinstall; do it eagerly so scripts that read node_modules/electron/dist
+  // (e.g. validate-macos-version) keep working without first requiring electron.
+  // The fork already runs `git submodule update` and `compile:script` earlier in
+  // this script, so only the eager electron install is taken from upstream here.
+  const electronInstallScript = require.resolve('electron/install.js')
+  result = spawnSync(process.execPath, [electronInstallScript], options)
+
+  if (result.status !== 0) {
+    process.exit(result.status || 1)
+  }
+
   // Capture output here so CI failures include the Playwright-specific error.
   result = spawnSync(
     process.execPath,
