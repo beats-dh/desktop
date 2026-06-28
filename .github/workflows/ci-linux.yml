@@ -28,7 +28,7 @@ jobs:
       - name: Package and test application in container
         uses: ./.github/actions/ubuntu-arm64-packaging
       - name: Upload output artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ubuntu-arm64-artifacts
           path: |
@@ -50,7 +50,7 @@ jobs:
       - name: Package and test application in container
         uses: ./.github/actions/ubuntu-arm-packaging
       - name: Upload output artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ubuntu-arm-artifacts
           path: |
@@ -72,7 +72,7 @@ jobs:
       - name: Package and test application in container
         uses: ./.github/actions/ubuntu-amd64-packaging
       - name: Upload output artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ubuntu-amd64-artifacts
           path: |
