@@ -89,25 +89,20 @@ export const enableCustomIntegration = () => true
 export const enableResizingToolbarButtons = () => true
 
 export const enableCommitMessageGeneration = (account: Account) => {
-  return (
-    (account.features ?? []).includes(
-      'desktop_copilot_generate_commit_message'
-    ) &&
-    // IMPORTANT: Do not remove this feature flag without replacing its usages
-    // with a check for the `isCopilotDesktopEnabled` property on the account.
-    account.isCopilotDesktopEnabled
-  )
+  // Fork: the upstream `desktop_copilot_generate_commit_message` flag is served
+  // by GitHub's internal `/desktop_internal/features` endpoint, which only
+  // answers for the official GitHub Desktop OAuth app — on this fork (custom
+  // OAuth app) it returns nothing, so the button would never show. Following
+  // the upstream note, we gate purely on the account's real Copilot-for-Desktop
+  // capability instead of the internal feature flag.
+  return account.isCopilotDesktopEnabled === true
 }
 
 export const enableCopilotSdkCommitMessageGeneration = (account: Account) => {
-  // Enabled for all users in beta and development channels, and for users with
-  // the feature flag enabled in production.
-  return (
-    enableBetaFeatures() ||
-    (account.features ?? []).includes(
-      'desktop_enable_copilot_sdk_commit_message_generation'
-    )
-  )
+  // Enabled in beta/development channels, or — on this fork, where the internal
+  // feature-flag endpoint doesn't answer for our custom OAuth app — for any
+  // account that actually has Copilot for Desktop enabled.
+  return enableBetaFeatures() || account.isCopilotDesktopEnabled === true
 }
 
 /** Should we enable Copilot-powered merge conflict resolution? */
