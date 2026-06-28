@@ -2,12 +2,13 @@
 
 import * as path from 'path'
 import * as cp from 'child_process'
+import * as fs from 'fs'
 import { promisify } from 'util'
 
 import glob = require('glob')
 const globPromise = promisify(glob)
 
-import { getDistPath, getDistRoot } from './dist-info'
+import { getDistPath, getDistRoot, getExecutableName } from './dist-info'
 
 function getArchitecture() {
   const arch = process.env.npm_config_arch || process.arch
@@ -30,7 +31,23 @@ async function runElectronBuilder(): Promise<void> {
   // `.cmd` resolution.
   const electronBuilderCli = require.resolve('electron-builder/out/cli/cli')
 
-  const configPath = path.resolve(__dirname, 'electron-builder.yml')
+  // electron-builder's `executableName` defaults to `productName` ("GitHub
+  // Desktop"), but electron-packager names the binary per-platform via
+  // getExecutableName() (e.g. `GitHubDesktop.exe` on Windows, `github-desktop`
+  // on Linux). Without aligning them the NSIS shortcut points at a
+  // non-existent `GitHub Desktop.exe`. Derive a config that pins
+  // executableName to the real per-platform binary name. Written to dist/
+  // (git-ignored); config paths stay relative to the project dir, not this file.
+  const baseConfig = fs.readFileSync(
+    path.resolve(__dirname, 'electron-builder.yml'),
+    'utf8'
+  )
+  const configPath = path.join(getDistRoot(), 'electron-builder.generated.yml')
+  fs.mkdirSync(getDistRoot(), { recursive: true })
+  fs.writeFileSync(
+    configPath,
+    `${baseConfig}\nexecutableName: ${getExecutableName()}\n`
+  )
 
   const args = [
     electronBuilderCli,
